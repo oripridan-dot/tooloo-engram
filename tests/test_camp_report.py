@@ -59,6 +59,7 @@ from training_camp.camp_runner import (
     _make_poisoned_engrams,
 )
 from training_camp.metrics import (
+    MOCK_CAMP_BASELINE,
     CampRunSummary,
     MetricsCollector,
     ScenarioMetrics,
@@ -240,6 +241,36 @@ class TestReportBuilders:
         report = build_full_report(summary, [], mode="mock")
         assert "REGRESSION FLAGS" in report
         assert "AVG_QUALITY" in report
+
+    def test_build_full_report_live_mode_includes_comparison_table(self) -> None:
+        """Live-mode full report must include the Live vs Mock Baseline section."""
+        summary = CampRunSummary(
+            run_id="test-live-cmp",
+            started_at="2025-01-01T00:00:00+00:00",
+            completed_at="2025-01-01T00:02:00+00:00",
+            total_scenarios=5,
+            passed_scenarios=5,
+            avg_latency_ms=850.0,   # realistic LLM round-trip
+            p99_latency_ms=2100.0,
+            avg_quality_score=95.0,
+            adversary_first_pass_rate=1.0,
+            regression_pass=True,
+        )
+        report = build_full_report(summary, [], mode="live")
+        assert "Live vs Mock Baseline" in report
+        assert str(MOCK_CAMP_BASELINE["avg_latency_ms"]) in report
+
+    def test_build_full_report_mock_mode_no_comparison_table(self) -> None:
+        """Mock-mode full report must NOT include the Live vs Mock Baseline section."""
+        summary = CampRunSummary(
+            run_id="test-mock-no-cmp",
+            started_at="2025-01-01T00:00:00+00:00",
+            total_scenarios=3,
+            passed_scenarios=3,
+            regression_pass=True,
+        )
+        report = build_full_report(summary, [], mode="mock")
+        assert "Live vs Mock Baseline" not in report
 
     def test_camp_report_generator_writes_files(self, tmp_path) -> None:
         """CampReportGenerator.write_scenario and write_full_report create real files."""
@@ -464,3 +495,78 @@ class TestFullCampLive:
         assert summary.regression_pass, f"Live camp regression flags: {summary.regression_flags}"
         assert md_path.exists()
         assert json_path.exists()
+
+    def test_live_camp_full_l1_l6(self, tmp_path) -> None:
+        """Run all L1-L6 scenarios with live Gemini — establishes live latency baseline.
+
+        This is the counterpart to the mock `camp-l2l6-full` run. Live latency
+        overhead vs mock is captured in the report's Live vs Mock Baseline table.
+        """
+        run_id = f"camp-live-full-{uuid.uuid4().hex[:8]}"
+        gen = CampReportGenerator(reports_dir=tmp_path, run_id=run_id, mode="live")
+        collector = MetricsCollector(run_id)
+        tribunal = _build_tribunal("live")
+        scenarios = get_scenarios(level=None)
+
+        print(f"\n{'='*64}")
+        print(f"  LIVE CAMP L1-L6: {len(scenarios)} scenarios | run_id={run_id}")
+        print(f"{'='*64}")
+
+        for scenario in scenarios:
+            metrics, tri_results = _run_scenario_with_results(scenario, tribunal, collector)
+            step_path = gen.write_scenario(scenario, metrics, tri_results)
+
+            status = "✅ PASS" if metrics.passed else "❌ FAIL"
+            print(
+                f"  {status} {scenario.scenario_id} {scenario.title}"
+                f" | Q={metrics.quality_score:.1f}"
+                f" | {metrics.total_latency_ms:.0f}ms"
+                f" | JIT={metrics.jit_sources_added}"
+                f" | heals={metrics.heal_cycles}"
+            )
+
+        summary = collector.summarize()
+        md_path, json_path = gen.write_full_report(summary)
+        gen.print_summary(summary)
+
+        print(f"\n  Full live report : {md_path}")
+        print(f"  JSON report      : {json_path}")
+        print(f"\n  Live latency baseline:")
+        print(f"    avg={summary.avg_latency_ms:.1f}ms  p99={summary.p99_latency_ms:.1f}ms")
+        print(f"    mock avg=31.7ms  mock p99=64.8ms")
+
+        # ── Core assertions ─────────────────────────────────────
+        assert summary.total_scenarios == len(scenarios), (
+            f"Expected {len(scenarios)} scenarios, got {summary.total_scenarios}"
+        )
+        assert summary.passed_scenarios == summary.total_scenarios, (
+            f"Not all live scenarios passed: "
+            f"{summary.passed_scenarios}/{summary.total_scenarios}"
+        )
+        assert summary.regression_pass, (
+            f"Live camp regression flags: {summary.regression_flags}"
+        )
+        assert summary.avg_quality_score >= 90.0, (
+            f"Live avg quality below gate: {summary.avg_quality_score:.1f}"
+        )
+
+        # ── Live latency gate: live P99 must stay under 10s per scenario ─
+        # (LLM network round-trips are expected; 10s is the hard ceiling)
+        assert summary.p99_latency_ms <= 10_000, (
+            f"Live P99 latency exceeded 10s: {summary.p99_latency_ms:.0f}ms. "
+            "Investigate ThreadPoolExecutor fan-out or TTL caching."
+        )
+
+        # ── Report files must exist and contain the comparison table ──
+        assert md_path.exists()
+        assert json_path.exists()
+        md_text = md_path.read_text()
+        assert "Live vs Mock Baseline" in md_text, (
+            "Live report must include Live vs Mock Baseline comparison section"
+        )
+        assert "Camp KPIs" in md_text
+        assert "Per-Scenario Results" in md_text
+
+        json_data = json.loads(json_path.read_text())
+        assert json_data["mode"] == "live"
+        assert json_data["summary"]["total_scenarios"] == len(scenarios)

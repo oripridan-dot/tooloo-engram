@@ -1,0 +1,32 @@
+## ✅ PASS  `L2-02` — Real-Time Notification System
+
+| Field | Value |
+|---|---|
+| **Level** | L2 |
+| **Domains** | `backend, frontend` |
+| **Engrams** | 3 |
+| **Edges** | 0 |
+| **Latency** | 24.9 ms |
+| **Quality Score** | 95.00 |
+| **JIT Sources Anchored** | 9 |
+| **Adversary Rules Checked** | 34 |
+| **Heal Cycles** | 1 |
+| **Adversary First Pass** | ✅ Yes |
+| **Timestamp** | 2026-03-08T12:47:45.563710+00:00 |
+
+### Mandate
+
+> Build a notification system: (1) NotificationService (Python) — enqueue/dequeue with async worker, (2) WebSocket endpoint /ws/notifications/{user_id}, (3) React NotificationBell component polling the stream.
+
+### Adversary Seeds (Injected Flaws)
+
+| Rule ID | Description |
+|---|---|
+| `PERF-001` | Polling instead of WebSocket push |
+
+### Tribunal Pipeline Results
+
+| Engram | Passed | Heals | JIT | Rules | Latency (ms) | Stages |
+|---|---|---|---|---|---|---|
+| `df7fac34` | ✅ | 0 | 3 | 13 | 6.8 | JIT_ANCHOR:sources=3 → ADVERSARY:PASS:rules=13 |
+| `bf9871ed` | ✅ | 0 | 3 | 8 | 6.4 | JIT_ANCHOR:sources=3 → ADVERSARY:PASS:rules=8 |

@@ -193,3 +193,72 @@ class MetricsCollector:
         summary.regression_flags = flags
         summary.regression_pass = len(flags) == 0
         return summary
+
+
+# ── Established mock baseline (from camp-l2l6-full, 2026-03-08) ──────────────
+# These values are the ground-truth mock performance ceiling.
+# Live runs are measured against these to detect LLM overhead.
+
+MOCK_CAMP_BASELINE: dict[str, float] = {
+    "avg_latency_ms": 31.7,
+    "p99_latency_ms": 64.8,
+    "avg_quality_score": 95.0,
+    "adversary_first_pass_rate": 1.0,
+    "pass_rate": 1.0,
+    "heals_per_scenario": 21 / 18,  # 1.17
+}
+
+
+def compare_to_baseline(summary: CampRunSummary) -> dict[str, dict]:
+    """Return a live-vs-mock comparison dict for each KPI.
+
+    Returns a mapping of {metric_name: {mock, live, delta_ms, ratio}}.
+    Ratios > 1.0 mean the live run is slower/lower than mock.
+    """
+    comparison: dict[str, dict] = {}
+
+    latency_ratio = (
+        summary.avg_latency_ms / MOCK_CAMP_BASELINE["avg_latency_ms"]
+        if MOCK_CAMP_BASELINE["avg_latency_ms"] > 0 else 0.0
+    )
+    comparison["avg_latency_ms"] = {
+        "mock": MOCK_CAMP_BASELINE["avg_latency_ms"],
+        "live": round(summary.avg_latency_ms, 1),
+        "delta_ms": round(summary.avg_latency_ms - MOCK_CAMP_BASELINE["avg_latency_ms"], 1),
+        "ratio": round(latency_ratio, 2),
+    }
+
+    p99_ratio = (
+        summary.p99_latency_ms / MOCK_CAMP_BASELINE["p99_latency_ms"]
+        if MOCK_CAMP_BASELINE["p99_latency_ms"] > 0 else 0.0
+    )
+    comparison["p99_latency_ms"] = {
+        "mock": MOCK_CAMP_BASELINE["p99_latency_ms"],
+        "live": round(summary.p99_latency_ms, 1),
+        "delta_ms": round(summary.p99_latency_ms - MOCK_CAMP_BASELINE["p99_latency_ms"], 1),
+        "ratio": round(p99_ratio, 2),
+    }
+
+    comparison["avg_quality_score"] = {
+        "mock": MOCK_CAMP_BASELINE["avg_quality_score"],
+        "live": round(summary.avg_quality_score, 1),
+        "delta_ms": None,
+        "ratio": round(
+            summary.avg_quality_score / MOCK_CAMP_BASELINE["avg_quality_score"]
+            if MOCK_CAMP_BASELINE["avg_quality_score"] > 0 else 0.0,
+            3,
+        ),
+    }
+
+    comparison["adversary_first_pass_rate"] = {
+        "mock": MOCK_CAMP_BASELINE["adversary_first_pass_rate"],
+        "live": round(summary.adversary_first_pass_rate, 3),
+        "delta_ms": None,
+        "ratio": round(
+            summary.adversary_first_pass_rate / MOCK_CAMP_BASELINE["adversary_first_pass_rate"]
+            if MOCK_CAMP_BASELINE["adversary_first_pass_rate"] > 0 else 0.0,
+            3,
+        ),
+    }
+
+    return comparison

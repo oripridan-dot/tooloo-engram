@@ -48,7 +48,10 @@ class TestScenarioRegistry:
             assert s.domain_mix, f"Scenario {s.scenario_id} missing domain_mix"
 
     def test_all_scenarios_have_valid_levels(self):
-        valid = {ScenarioLevel.L1, ScenarioLevel.L2, ScenarioLevel.L3}
+        valid = {
+            ScenarioLevel.L1, ScenarioLevel.L2, ScenarioLevel.L3,
+            ScenarioLevel.L4, ScenarioLevel.L5, ScenarioLevel.L6,
+        }
         for s in ALL_SCENARIOS:
             assert s.level in valid, f"Scenario {s.scenario_id} has invalid level: {s.level}"
 
@@ -63,6 +66,18 @@ class TestScenarioRegistry:
     def test_l3_scenarios_exist(self):
         l3 = [s for s in ALL_SCENARIOS if s.level == ScenarioLevel.L3]
         assert len(l3) >= 1, f"Expected at least 1 L3 scenario, got {len(l3)}"
+
+    def test_l4_scenarios_exist(self):
+        l4 = [s for s in ALL_SCENARIOS if s.level == ScenarioLevel.L4]
+        assert len(l4) >= 2, f"Expected at least 2 L4 scenarios, got {len(l4)}"
+
+    def test_l5_scenarios_exist(self):
+        l5 = [s for s in ALL_SCENARIOS if s.level == ScenarioLevel.L5]
+        assert len(l5) >= 1, f"Expected at least 1 L5 scenario, got {len(l5)}"
+
+    def test_l6_scenarios_exist(self):
+        l6 = [s for s in ALL_SCENARIOS if s.level == ScenarioLevel.L6]
+        assert len(l6) >= 1, f"Expected at least 1 L6 scenario, got {len(l6)}"
 
     def test_adversary_seeds_have_required_fields(self):
         for scenario in ALL_SCENARIOS:
@@ -85,6 +100,44 @@ class TestScenarioRegistry:
         for s in ALL_SCENARIOS:
             assert s.expected_max_latency_ms > 0.0
 
+    def test_l4_scenarios_have_multiple_adversary_seeds(self):
+        """L4+ scenarios should stress-test the adversary with ≥ 2 seeds."""
+        l4 = [s for s in ALL_SCENARIOS if s.level == ScenarioLevel.L4]
+        # At least one L4 scenario should have ≥ 2 seeds
+        multi_seed = [s for s in l4 if len(s.adversary_seeds) >= 2]
+        assert len(multi_seed) >= 1
+
+    def test_l5_scenarios_have_multiple_adversary_seeds(self):
+        l5 = [s for s in ALL_SCENARIOS if s.level == ScenarioLevel.L5]
+        for s in l5:
+            assert len(s.adversary_seeds) >= 2, (
+                f"L5 scenario {s.scenario_id} should have ≥ 2 adversary seeds"
+            )
+
+    def test_l6_scenarios_have_four_or_more_adversary_seeds(self):
+        l6 = [s for s in ALL_SCENARIOS if s.level == ScenarioLevel.L6]
+        for s in l6:
+            assert len(s.adversary_seeds) >= 4, (
+                f"L6 scenario {s.scenario_id} should have ≥ 4 adversary seeds"
+            )
+
+    def test_l4_l5_l6_have_domain_mix_of_at_least_two(self):
+        high_levels = {ScenarioLevel.L4, ScenarioLevel.L5, ScenarioLevel.L6}
+        for s in ALL_SCENARIOS:
+            if s.level in high_levels:
+                assert len(s.domain_mix) >= 2, (
+                    f"{s.scenario_id} (level={s.level}) should have ≥ 2 domains"
+                )
+
+    def test_l6_quality_gate_is_tighter(self):
+        """L6 scenarios should demand higher minimum quality."""
+        l6 = [s for s in ALL_SCENARIOS if s.level == ScenarioLevel.L6]
+        l4 = [s for s in ALL_SCENARIOS if s.level == ScenarioLevel.L4]
+        if l6 and l4:
+            avg_l6_quality = sum(s.expected_min_quality for s in l6) / len(l6)
+            avg_l4_quality = sum(s.expected_min_quality for s in l4) / len(l4)
+            assert avg_l6_quality >= avg_l4_quality
+
 
 class TestGetScenarios:
     def test_get_all_scenarios(self):
@@ -98,6 +151,21 @@ class TestGetScenarios:
     def test_filter_by_l2(self):
         result = get_scenarios(level=ScenarioLevel.L2)
         assert all(s.level == ScenarioLevel.L2 for s in result)
+
+    def test_filter_by_l4(self):
+        result = get_scenarios(level=ScenarioLevel.L4)
+        assert all(s.level == ScenarioLevel.L4 for s in result)
+        assert len(result) >= 2
+
+    def test_filter_by_l5(self):
+        result = get_scenarios(level=ScenarioLevel.L5)
+        assert all(s.level == ScenarioLevel.L5 for s in result)
+        assert len(result) >= 1
+
+    def test_filter_by_l6(self):
+        result = get_scenarios(level=ScenarioLevel.L6)
+        assert all(s.level == ScenarioLevel.L6 for s in result)
+        assert len(result) >= 1
 
     def test_filter_by_scenario_id(self):
         if ALL_SCENARIOS:
@@ -350,3 +418,124 @@ class TestRunScenario:
         collector = MetricsCollector("test-run-2")
         run_scenario(scenario, tribunal, collector)
         assert len(collector.get_records()) == 1
+
+
+# ── Integration: run_training_camp L2 ─────────────────────────
+
+class TestRunTrainingCampL2:
+    def test_l2_camp_runs_without_error(self):
+        from training_camp.camp_runner import run_training_camp
+        summary = run_training_camp(level_filter=ScenarioLevel.L2, verbose=False)
+        assert summary is not None
+
+    def test_l2_camp_runs_all_l2_scenarios(self):
+        from training_camp.camp_runner import run_training_camp
+        l2_count = len([s for s in ALL_SCENARIOS if s.level == ScenarioLevel.L2])
+        summary = run_training_camp(level_filter=ScenarioLevel.L2, verbose=False)
+        assert summary.total_scenarios == l2_count
+
+    def test_l2_camp_quality_above_zero(self):
+        from training_camp.camp_runner import run_training_camp
+        summary = run_training_camp(level_filter=ScenarioLevel.L2, verbose=False)
+        assert summary.avg_quality_score > 0.0
+
+
+# ── Integration: run_training_camp L3 ─────────────────────────
+
+class TestRunTrainingCampL3:
+    def test_l3_camp_runs_without_error(self):
+        from training_camp.camp_runner import run_training_camp
+        summary = run_training_camp(level_filter=ScenarioLevel.L3, verbose=False)
+        assert summary is not None
+
+    def test_l3_camp_runs_all_l3_scenarios(self):
+        from training_camp.camp_runner import run_training_camp
+        l3_count = len([s for s in ALL_SCENARIOS if s.level == ScenarioLevel.L3])
+        summary = run_training_camp(level_filter=ScenarioLevel.L3, verbose=False)
+        assert summary.total_scenarios == l3_count
+
+    def test_l3_camp_quality_above_zero(self):
+        from training_camp.camp_runner import run_training_camp
+        summary = run_training_camp(level_filter=ScenarioLevel.L3, verbose=False)
+        assert summary.avg_quality_score > 0.0
+
+
+# ── Integration: run_training_camp L4 ─────────────────────────
+
+class TestRunTrainingCampL4:
+    def test_l4_camp_runs_without_error(self):
+        from training_camp.camp_runner import run_training_camp
+        summary = run_training_camp(level_filter=ScenarioLevel.L4, verbose=False)
+        assert summary is not None
+
+    def test_l4_camp_runs_all_l4_scenarios(self):
+        from training_camp.camp_runner import run_training_camp
+        l4_count = len([s for s in ALL_SCENARIOS if s.level == ScenarioLevel.L4])
+        summary = run_training_camp(level_filter=ScenarioLevel.L4, verbose=False)
+        assert summary.total_scenarios == l4_count
+
+    def test_l4_camp_quality_above_zero(self):
+        from training_camp.camp_runner import run_training_camp
+        summary = run_training_camp(level_filter=ScenarioLevel.L4, verbose=False)
+        assert summary.avg_quality_score > 0.0
+
+    def test_l4_camp_has_run_id(self):
+        from training_camp.camp_runner import run_training_camp
+        summary = run_training_camp(level_filter=ScenarioLevel.L4, verbose=False)
+        assert summary.run_id.startswith("camp-")
+
+
+# ── Integration: run_training_camp L5 ─────────────────────────
+
+class TestRunTrainingCampL5:
+    def test_l5_camp_runs_without_error(self):
+        from training_camp.camp_runner import run_training_camp
+        summary = run_training_camp(level_filter=ScenarioLevel.L5, verbose=False)
+        assert summary is not None
+
+    def test_l5_camp_runs_all_l5_scenarios(self):
+        from training_camp.camp_runner import run_training_camp
+        l5_count = len([s for s in ALL_SCENARIOS if s.level == ScenarioLevel.L5])
+        summary = run_training_camp(level_filter=ScenarioLevel.L5, verbose=False)
+        assert summary.total_scenarios == l5_count
+
+    def test_l5_camp_quality_above_zero(self):
+        from training_camp.camp_runner import run_training_camp
+        summary = run_training_camp(level_filter=ScenarioLevel.L5, verbose=False)
+        assert summary.avg_quality_score > 0.0
+
+    def test_l5_camp_adversary_seeds_checked(self):
+        """L5 scenarios all have ≥ 2 seeds — adversary_rules_checked must reflect this."""
+        from training_camp.camp_runner import run_training_camp
+        summary = run_training_camp(level_filter=ScenarioLevel.L5, verbose=False)
+        assert summary.total_scenarios >= 1
+
+
+# ── Integration: run_training_camp L6 ─────────────────────────
+
+class TestRunTrainingCampL6:
+    def test_l6_camp_runs_without_error(self):
+        from training_camp.camp_runner import run_training_camp
+        summary = run_training_camp(level_filter=ScenarioLevel.L6, verbose=False)
+        assert summary is not None
+
+    def test_l6_camp_runs_all_l6_scenarios(self):
+        from training_camp.camp_runner import run_training_camp
+        l6_count = len([s for s in ALL_SCENARIOS if s.level == ScenarioLevel.L6])
+        summary = run_training_camp(level_filter=ScenarioLevel.L6, verbose=False)
+        assert summary.total_scenarios == l6_count
+
+    def test_l6_camp_quality_above_zero(self):
+        from training_camp.camp_runner import run_training_camp
+        summary = run_training_camp(level_filter=ScenarioLevel.L6, verbose=False)
+        assert summary.avg_quality_score > 0.0
+
+    def test_l6_camp_has_run_id(self):
+        from training_camp.camp_runner import run_training_camp
+        summary = run_training_camp(level_filter=ScenarioLevel.L6, verbose=False)
+        assert summary.run_id.startswith("camp-")
+
+    def test_l6_camp_latency_recorded(self):
+        from training_camp.camp_runner import run_training_camp
+        summary = run_training_camp(level_filter=ScenarioLevel.L6, verbose=False)
+        assert summary.avg_latency_ms >= 0.0

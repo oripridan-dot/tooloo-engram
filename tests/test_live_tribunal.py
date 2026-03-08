@@ -49,7 +49,7 @@ from training_camp.scenarios import ALL_SCENARIOS, get_scenarios
 
 from experiments.project_engram.engram.adversary import AdversaryValidator
 from experiments.project_engram.engram.arbiter import ArbiterHealer, ArbiterPayload
-from experiments.project_engram.engram.delta_sync import DeltaSyncBus
+from experiments.project_engram.engram.delta_sync import DeltaSyncBus, MutationEventType
 from experiments.project_engram.engram.graph_store import EngramGraph
 from experiments.project_engram.engram.jit_context import JITContextAnchor
 from experiments.project_engram.engram.schema import (
@@ -402,3 +402,319 @@ class TestLiveTribunal:
             f"Live tribunal cost exceeded $0.10: ${total_cost:.4f}"
         )
         print(f"\n  [live budget] total cost for 3 scenarios: ${total_cost:.5f}")
+
+
+# ═══════════════════════════════════════════════════════════════
+#  SECTION 4 — WebSocket Delta-Sync payload tests
+# ═══════════════════════════════════════════════════════════════
+
+class TestDeltaSyncWebSocketPayload:
+    """Validates ENGRAM_MUTATION_COMMIT and ENGRAM_MUTATION_PENDING payloads.
+
+    These tests verify the UI-facing contract: the DeltaSyncBus must emit
+    well-formed event envelopes that the WebSocket client can consume for a
+    hot-swap without a page reload.
+
+    The mock-mode variants run without any API key.
+    The @live_only variants force a real heal cycle with Gemini.
+    """
+
+    # ── Mock-mode: pure structural validation ─────────────────
+
+    def test_pending_payload_emitted_on_adversary_fail_mock(self) -> None:
+        """ENGRAM_MUTATION_PENDING must be emitted when adversary flags a violation."""
+        from experiments.project_engram.engram.arbiter import ArbiterHealer, MockArbiterLLM
+        from experiments.project_engram.engram.jit_context import (
+            JITContextAnchor,
+            MockContextFetcher,
+        )
+
+        pending_events = []
+        bus = DeltaSyncBus()
+        bus.subscribe(
+            MutationEventType.ENGRAM_MUTATION_PENDING,
+            lambda e: pending_events.append(e),
+        )
+
+        tribunal = TribunalOrchestrator(
+            anchor=JITContextAnchor(fetcher=MockContextFetcher()),
+            validator=AdversaryValidator(),
+            healer=ArbiterHealer(llm=MockArbiterLLM()),
+            bus=bus,
+            max_heal_cycles=3,
+        )
+
+        graph = EngramGraph(decay_radius=3)
+        poisoned = ContextAwareEngram(
+            intent="Hardcoded secret — adversary must catch it",
+            ast_signature="def get_api_key():",
+            logic_body='api_key = "sk-hardcoded-1234abcdef"',
+            domain=Domain.BACKEND,
+            language=Language.PYTHON,
+            module_path="config/secrets.py",
+            mandate_level="L1",
+        )
+        graph.add_engram(poisoned)
+        tribunal.run(graph, poisoned)
+
+        assert len(pending_events) >= 1, (
+            "ENGRAM_MUTATION_PENDING must be emitted when adversary fails"
+        )
+        payload = pending_events[0].payload
+        assert "target_engrams" in payload, "Payload must have target_engrams"
+        assert "mutation_reason" in payload, "Payload must have mutation_reason"
+        assert "ui_directive" in payload, "Payload must have ui_directive"
+        assert payload["ui_directive"] == "soft_lock", (
+            f"Expected ui_directive=soft_lock, got {payload['ui_directive']!r}"
+        )
+
+    def test_commit_payload_structure_on_heal_mock(self) -> None:
+        """ENGRAM_MUTATION_COMMIT payload must have all UI-required fields after mock heal."""
+        from experiments.project_engram.engram.arbiter import ArbiterHealer, MockArbiterLLM
+        from experiments.project_engram.engram.jit_context import (
+            JITContextAnchor,
+            MockContextFetcher,
+        )
+
+        commit_events = []
+        bus = DeltaSyncBus()
+        bus.subscribe(
+            MutationEventType.ENGRAM_MUTATION_COMMIT,
+            lambda e: commit_events.append(e),
+        )
+
+        tribunal = TribunalOrchestrator(
+            anchor=JITContextAnchor(fetcher=MockContextFetcher()),
+            validator=AdversaryValidator(),
+            healer=ArbiterHealer(llm=MockArbiterLLM()),
+            bus=bus,
+            max_heal_cycles=2,
+        )
+
+        graph = EngramGraph(decay_radius=3)
+        poisoned = ContextAwareEngram(
+            intent="Hardcoded secret — mock arbiter will heal it",
+            ast_signature="def get_secret():",
+            logic_body='SECRET = "hardcoded_value_here"',
+            domain=Domain.BACKEND,
+            language=Language.PYTHON,
+            module_path="auth/secret.py",
+            mandate_level="L1",
+        )
+        graph.add_engram(poisoned)
+        result = tribunal.run(graph, poisoned)
+
+        assert result.heal_cycles >= 1, "Poisoned engram must have triggered at least 1 heal"
+        assert len(commit_events) >= 1, (
+            "ENGRAM_MUTATION_COMMIT must be emitted after a successful heal"
+        )
+
+        # ── Validate UI contract fields ──────────────────────
+        commit_payload = commit_events[0].payload
+        required_top_level = {"dropped_nodes", "upserted_nodes", "repointed_edges",
+                               "heal_latency_ms", "heal_cycle"}
+        missing = required_top_level - set(commit_payload.keys())
+        assert not missing, (
+            f"COMMIT payload missing UI-required fields: {missing}\n"
+            f"Got keys: {set(commit_payload.keys())}"
+        )
+        assert isinstance(commit_payload["dropped_nodes"], list), (
+            "dropped_nodes must be a list (node IDs the UI should remove)"
+        )
+        assert isinstance(commit_payload["upserted_nodes"], list), (
+            "upserted_nodes must be a list of healed engram descriptors"
+        )
+        assert commit_payload["heal_cycle"] >= 1, "heal_cycle must be ≥ 1"
+        assert commit_payload["heal_latency_ms"] >= 0.0, (
+            "heal_latency_ms must be non-negative"
+        )
+        # Each upserted node must carry the fields the UI BrandVault component needs
+        for node in commit_payload["upserted_nodes"]:
+            for field_name in ("engram_id", "domain", "intent", "module_path",
+                               "mandate_level", "tribunal_verdict", "confidence_score"):
+                assert field_name in node, (
+                    f"upserted_node missing UI field '{field_name}': {node}"
+                )
+
+    def test_no_commit_emitted_on_clean_engram_mock(self) -> None:
+        """A clean engram that passes adversary must NOT emit COMMIT (no heal needed)."""
+        from experiments.project_engram.engram.arbiter import ArbiterHealer, MockArbiterLLM
+        from experiments.project_engram.engram.jit_context import (
+            JITContextAnchor,
+            MockContextFetcher,
+        )
+
+        commit_events = []
+        bus = DeltaSyncBus()
+        bus.subscribe(
+            MutationEventType.ENGRAM_MUTATION_COMMIT,
+            lambda e: commit_events.append(e),
+        )
+
+        tribunal = TribunalOrchestrator(
+            anchor=JITContextAnchor(fetcher=MockContextFetcher()),
+            validator=AdversaryValidator(),
+            healer=ArbiterHealer(llm=MockArbiterLLM()),
+            bus=bus,
+            max_heal_cycles=2,
+        )
+
+        graph = EngramGraph(decay_radius=3)
+        clean = ContextAwareEngram(
+            intent="Clean rate limiter — no violations",
+            ast_signature="def rate_limit(max_req: int, window_s: int):",
+            logic_body=(
+                "import os\nfrom datetime import UTC, datetime\n\n"
+                "def rate_limit(max_req: int, window_s: int):\n"
+                "    limit = int(os.environ.get('RATE_LIMIT', max_req))\n"
+                "    return limit\n"
+            ),
+            domain=Domain.BACKEND,
+            language=Language.PYTHON,
+            module_path="middleware/rate_limit.py",
+            mandate_level="L1",
+        )
+        graph.add_engram(clean)
+        result = tribunal.run(graph, clean)
+
+        assert result.passed, "Clean engram must pass"
+        assert result.heal_cycles == 0, "Clean engram must require zero heal cycles"
+        assert len(commit_events) == 0, (
+            "COMMIT must NOT be emitted for a clean engram (no mutation occurred)"
+        )
+
+    def test_event_log_replay_buffer_populated(self) -> None:
+        """DeltaSyncBus replay buffer must contain recent events for reconnect hydration."""
+        from experiments.project_engram.engram.arbiter import ArbiterHealer, MockArbiterLLM
+        from experiments.project_engram.engram.jit_context import (
+            JITContextAnchor,
+            MockContextFetcher,
+        )
+
+        bus = DeltaSyncBus()
+        tribunal = TribunalOrchestrator(
+            anchor=JITContextAnchor(fetcher=MockContextFetcher()),
+            validator=AdversaryValidator(),
+            healer=ArbiterHealer(llm=MockArbiterLLM()),
+            bus=bus,
+            max_heal_cycles=2,
+        )
+
+        graph = EngramGraph(decay_radius=3)
+        poisoned = ContextAwareEngram(
+            intent="Inject flaw to trigger event log",
+            ast_signature="def bad():",
+            logic_body='token = "hardcoded_jwt_secret"',
+            domain=Domain.BACKEND,
+            language=Language.PYTHON,
+            module_path="auth/token.py",
+            mandate_level="L2",
+        )
+        graph.add_engram(poisoned)
+        tribunal.run(graph, poisoned)
+
+        recent = bus.get_recent_events(limit=20)
+        assert len(recent) >= 1, (
+            "Replay buffer must be non-empty after a tribunal run with events"
+        )
+        event_types = {e.event_type for e in recent}
+        assert MutationEventType.ENGRAM_MUTATION_PENDING in event_types, (
+            "Replay buffer must contain the PENDING event for reconnect hydration"
+        )
+        # Verify each event has a serialisable to_dict() — required for WS fan-out
+        for event in recent:
+            d = event.to_dict()
+            assert "event_type" in d
+            assert "timestamp" in d
+            assert "event_id" in d
+            assert "payload" in d
+
+    # ── Live-mode: real Gemini heal cycle + WS payload ─────────
+
+    @live_only
+    def test_commit_payload_from_live_healed_engram(self) -> None:
+        """COMMIT payload after live Gemini heal must have fully-populated upserted_nodes.
+
+        This is the critical UI-severance test: the payload the WebSocket emits
+        must allow the frontend to hot-swap the broken engram without a page reload.
+        Forces an L4-level mandate so the heal is non-trivial.
+        """
+        from training_camp.scenarios import get_scenarios
+
+        llm = LiveLLM()
+        bus = DeltaSyncBus()
+        commit_events = []
+        bus.subscribe(
+            MutationEventType.ENGRAM_MUTATION_COMMIT,
+            lambda e: commit_events.append(e),
+        )
+
+        tribunal = TribunalOrchestrator(
+            anchor=JITContextAnchor(fetcher=LiveContextFetcher(llm=llm)),
+            validator=AdversaryValidator(),
+            healer=ArbiterHealer(llm=LiveArbiterLLM(llm=llm)),
+            bus=bus,
+            max_heal_cycles=3,
+        )
+
+        # Use an L4 scenario's adversary seed to guarantee a real heal
+        l4_scenarios = [s for s in get_scenarios() if s.level.value == "L4" and s.adversary_seeds]
+        assert l4_scenarios, "Need at least one L4 scenario with adversary seeds"
+        scenario = l4_scenarios[0]
+        seed = scenario.adversary_seeds[0]
+
+        graph = EngramGraph(decay_radius=4)
+        poisoned = ContextAwareEngram(
+            intent=f"{scenario.title} [LIVE POISON:{seed.rule_id}]",
+            ast_signature=f"def poisoned_{seed.rule_id.lower().replace('-', '_')}():",
+            logic_body=seed.poisoned_code,
+            domain=Domain.BACKEND,
+            language=Language.PYTHON,
+            module_path=f"live_test/{seed.rule_id}.py",
+            mandate_level="L4",
+        )
+        graph.add_engram(poisoned)
+        result = tribunal.run(graph, poisoned)
+
+        assert result.passed, (
+            f"Live tribunal failed to heal poisoned L4 engram: "
+            f"rule={seed.rule_id}, cycles={result.heal_cycles}"
+        )
+        assert result.heal_cycles >= 1, "Live L4 poison must require at least 1 heal"
+        assert len(commit_events) >= 1, (
+            "ENGRAM_MUTATION_COMMIT must be emitted after live Gemini heal"
+        )
+
+        commit_payload = commit_events[0].payload
+        assert len(commit_payload["dropped_nodes"]) == 1, (
+            "Exactly one node must be dropped (the v1 broken engram)"
+        )
+        assert len(commit_payload["upserted_nodes"]) == 1, (
+            "Exactly one node must be upserted (the v2 healed engram)"
+        )
+
+        healed_node = commit_payload["upserted_nodes"][0]
+        # Verify all UI BrandVault fields are present
+        for field_name in ("engram_id", "domain", "intent", "module_path",
+                           "mandate_level", "tribunal_verdict", "confidence_score"):
+            assert field_name in healed_node, (
+                f"Live healed node missing UI field '{field_name}': {healed_node}"
+            )
+
+        assert healed_node["tribunal_verdict"] in ("PASS", "FAIL", "PENDING"), (
+            f"tribunal_verdict must be a known value: {healed_node['tribunal_verdict']!r}"
+        )
+        assert 0.0 <= healed_node["confidence_score"] <= 100.0, (
+            f"confidence_score out of range: {healed_node['confidence_score']}"
+        )
+
+        import json
+        # Whole payload must be JSON-serialisable — required for WebSocket fan-out
+        commit_json = json.dumps(commit_events[0].to_dict())
+        assert len(commit_json) > 0, "COMMIT event must serialise to non-empty JSON"
+
+        print(
+            f"\n  [live delta-sync] {scenario.scenario_id} · rule={seed.rule_id} · "
+            f"heal_cycles={result.heal_cycles} · "
+            f"heal_latency={commit_payload['heal_latency_ms']:.1f}ms"
+        )

@@ -22,8 +22,12 @@ import time
 import uuid
 from pathlib import Path
 
-# Make tooloo-core available
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+# Make tooloo-core and tooloo-engram root available
+_workspace_root = Path(__file__).parent.parent.parent
+_engram_root = Path(__file__).parent.parent
+for _p in (str(_workspace_root), str(_engram_root)):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
 
 from experiments.project_engram.engram.adversary import AdversaryValidator
 from experiments.project_engram.engram.arbiter import ArbiterHealer, MockArbiterLLM
@@ -192,19 +196,36 @@ def run_training_camp(
     scenario_id_filter: str | None = None,
     *,
     verbose: bool = True,
+    mode: str = "mock",
 ) -> CampRunSummary:
     """Run the full training camp and return a summary."""
     run_id = f"camp-{uuid.uuid4().hex[:8]}"
     collector = MetricsCollector(run_id)
 
-    # Build shared tribunal (mock mode — no LLM calls)
-    tribunal = TribunalOrchestrator(
-        anchor=JITContextAnchor(fetcher=MockContextFetcher()),
-        validator=AdversaryValidator(),
-        healer=ArbiterHealer(llm=MockArbiterLLM()),
-        bus=DeltaSyncBus(),
-        max_heal_cycles=3,
-    )
+    # Build shared tribunal (mock or live)
+    if mode == "live":
+        from live_adapters import LiveArbiterLLM, LiveContextFetcher
+
+        from experiments.project_engram.harness.live_llm import LiveLLM
+
+        llm = LiveLLM()
+        tribunal = TribunalOrchestrator(
+            anchor=JITContextAnchor(fetcher=LiveContextFetcher(llm=llm)),
+            validator=AdversaryValidator(),
+            healer=ArbiterHealer(llm=LiveArbiterLLM(llm=llm)),
+            bus=DeltaSyncBus(),
+            max_heal_cycles=3,
+        )
+        mode_label = "live (Gemini)"
+    else:
+        tribunal = TribunalOrchestrator(
+            anchor=JITContextAnchor(fetcher=MockContextFetcher()),
+            validator=AdversaryValidator(),
+            healer=ArbiterHealer(llm=MockArbiterLLM()),
+            bus=DeltaSyncBus(),
+            max_heal_cycles=3,
+        )
+        mode_label = "mock (offline)"
 
     # Get scenarios
     scenarios = get_scenarios(level_filter)
@@ -214,7 +235,7 @@ def run_training_camp(
     if verbose:
         print(f"\n{'='*60}")
         print(f"TOOLOO ENGRAM V2 — TRAINING CAMP [{run_id}]")
-        print(f"Scenarios: {len(scenarios)} | Mode: offline (MockLLM)")
+        print(f"Scenarios: {len(scenarios)} | Mode: {mode_label}")
         print(f"{'='*60}")
 
     for scenario in scenarios:
@@ -252,8 +273,10 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(description="Run Engram V2 Training Camp")
-    parser.add_argument("--level", choices=["L1", "L2", "L3"], help="Filter by level")
+    parser.add_argument("--level", choices=["L1", "L2", "L3", "L4", "L5", "L6"], help="Filter by level")
     parser.add_argument("--scenario", help="Run a specific scenario by ID")
+    parser.add_argument("--mode", choices=["mock", "live"], default="mock",
+                        help="mock (offline, no API calls) or live (Gemini API)")
     parser.add_argument("--quiet", action="store_true", help="Suppress output")
     args = parser.parse_args()
 
@@ -262,5 +285,6 @@ if __name__ == "__main__":
         level_filter=level,
         scenario_id_filter=args.scenario,
         verbose=not args.quiet,
+        mode=args.mode,
     )
     sys.exit(0 if summary.regression_pass else 1)

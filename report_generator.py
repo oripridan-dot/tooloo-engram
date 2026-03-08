@@ -30,7 +30,13 @@ _root = Path(__file__).parent.parent
 if str(_root) not in sys.path:
     sys.path.insert(0, str(_root))
 
-from training_camp.metrics import REGRESSION_GATES, CampRunSummary, ScenarioMetrics
+from training_camp.metrics import (
+    MOCK_CAMP_BASELINE,
+    REGRESSION_GATES,
+    CampRunSummary,
+    ScenarioMetrics,
+    compare_to_baseline,
+)
 from training_camp.scenarios import TrainingScenario
 
 _REPORTS_DIR = Path(__file__).parent / "reports"
@@ -191,6 +197,46 @@ def _level_breakdown(all_metrics: list[ScenarioMetrics]) -> str:
     return "\n".join(lines)
 
 
+def _live_vs_mock_comparison(summary: CampRunSummary) -> str:
+    """Render a Live vs Mock latency comparison table for live-mode reports."""
+    cmp = compare_to_baseline(summary)
+
+    def _ratio_badge(ratio: float, higher_is_better: bool = False) -> str:
+        if higher_is_better:
+            return "✅" if ratio >= 0.98 else ("⚠️" if ratio >= 0.90 else "❌")
+        # Lower is better (latency)
+        return "✅" if ratio <= 1.5 else ("⚠️" if ratio <= 3.0 else "❌")
+
+    lat = cmp["avg_latency_ms"]
+    p99 = cmp["p99_latency_ms"]
+    q = cmp["avg_quality_score"]
+    adv = cmp["adversary_first_pass_rate"]
+
+    lines = [
+        "## Live vs Mock Baseline",
+        "",
+        f"> Baseline: `camp-l2l6-full` (mock, 2026-03-08) | "
+        f"Avg {MOCK_CAMP_BASELINE['avg_latency_ms']} ms · "
+        f"P99 {MOCK_CAMP_BASELINE['p99_latency_ms']} ms",
+        "",
+        "| Metric | Mock | Live | Δ | ×Overhead | Status |",
+        "|---|---|---|---|---|---|",
+        f"| Avg Latency | {lat['mock']} ms | {lat['live']} ms | +{lat['delta_ms']} ms "
+        f"| {lat['ratio']}× | {_ratio_badge(lat['ratio'])} |",
+        f"| P99 Latency | {p99['mock']} ms | {p99['live']} ms | +{p99['delta_ms']} ms "
+        f"| {p99['ratio']}× | {_ratio_badge(p99['ratio'])} |",
+        f"| Avg Quality | {q['mock']} | {q['live']} | — "
+        f"| {q['ratio']}× | {_ratio_badge(q['ratio'], higher_is_better=True)} |",
+        f"| Adversary 1st-Pass | {adv['mock']:.0%} | {adv['live']:.0%} | — "
+        f"| {adv['ratio']}× | {_ratio_badge(adv['ratio'], higher_is_better=True)} |",
+        "",
+        "> **Overhead interpretation:** ×1.0–1.5 = acceptable LLM network overhead · "
+        "> ×1.5–3.0 = consider TTL caching · ×3.0+ = tune `ThreadPoolExecutor` fan-out",
+        "",
+    ]
+    return "\n".join(lines)
+
+
 def build_full_report(
     summary: CampRunSummary,
     all_metrics: list[ScenarioMetrics],
@@ -222,6 +268,7 @@ def build_full_report(
         + "\n"
         + _regression_gate_section(summary)
         + "\n---\n\n"
+        + (_live_vs_mock_comparison(summary) + "\n---\n\n" if mode == "live" else "")
         + _per_scenario_table(all_metrics)
         + "\n"
         + _latency_histogram(all_metrics)
