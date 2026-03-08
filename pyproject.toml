@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "tooloo-engram"
+version = "0.1.0"
+description = "TooLoo V2 Engram Ecosystem — JIT-anchored, self-healing graph-native AI generation"
+requires-python = ">=3.11"
+dependencies = [
+    "networkx>=3.2",
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
