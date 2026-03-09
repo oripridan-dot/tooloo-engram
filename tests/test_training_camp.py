@@ -10,7 +10,6 @@ Validates:
 
 from __future__ import annotations
 
-import pytest
 from training_camp.metrics import (
     REGRESSION_GATES,
     CampRunSummary,
@@ -19,13 +18,12 @@ from training_camp.metrics import (
 )
 from training_camp.scenarios import (
     ALL_SCENARIOS,
-    AdversarySeed,
     ScenarioLevel,
-    TrainingScenario,
     get_scenarios,
 )
 
 # ── Scenario Registry ──────────────────────────────────────────
+
 
 class TestScenarioRegistry:
     def test_all_scenarios_not_empty(self):
@@ -49,8 +47,12 @@ class TestScenarioRegistry:
 
     def test_all_scenarios_have_valid_levels(self):
         valid = {
-            ScenarioLevel.L1, ScenarioLevel.L2, ScenarioLevel.L3,
-            ScenarioLevel.L4, ScenarioLevel.L5, ScenarioLevel.L6,
+            ScenarioLevel.L1,
+            ScenarioLevel.L2,
+            ScenarioLevel.L3,
+            ScenarioLevel.L4,
+            ScenarioLevel.L5,
+            ScenarioLevel.L6,
         }
         for s in ALL_SCENARIOS:
             assert s.level in valid, f"Scenario {s.scenario_id} has invalid level: {s.level}"
@@ -181,18 +183,19 @@ class TestGetScenarios:
 
 # ── ScenarioMetrics ───────────────────────────────────────────
 
+
 class TestScenarioMetrics:
     def _make(self, **kwargs) -> ScenarioMetrics:
-        defaults = dict(
-            scenario_id="L1-01",
-            level="L1",
-            passed=True,
-            total_latency_ms=25.0,
-            jit_sources_added=4,
-            adversary_rules_checked=8,
-            heal_cycles=0,
-            quality_score=94.5,
-        )
+        defaults = {
+            "scenario_id": "L1-01",
+            "level": "L1",
+            "passed": True,
+            "total_latency_ms": 25.0,
+            "jit_sources_added": 4,
+            "adversary_rules_checked": 8,
+            "heal_cycles": 0,
+            "quality_score": 94.5,
+        }
         defaults.update(kwargs)
         return ScenarioMetrics(**defaults)
 
@@ -210,6 +213,7 @@ class TestScenarioMetrics:
 
 
 # ── CampRunSummary ────────────────────────────────────────────
+
 
 class TestCampRunSummary:
     def test_pass_rate_zero_when_no_scenarios(self):
@@ -243,10 +247,16 @@ class TestCampRunSummary:
 
 # ── MetricsCollector ──────────────────────────────────────────
 
+
 class TestMetricsCollector:
-    def _make_metric(self, passed: bool = True, quality: float = 94.0,
-                     latency: float = 20.0, heal_cycles: int = 0,
-                     first_pass: bool = True) -> ScenarioMetrics:
+    def _make_metric(
+        self,
+        passed: bool = True,
+        quality: float = 94.0,
+        latency: float = 20.0,
+        heal_cycles: int = 0,
+        first_pass: bool = True,
+    ) -> ScenarioMetrics:
         return ScenarioMetrics(
             scenario_id="L1-01",
             level="L1",
@@ -295,7 +305,7 @@ class TestMetricsCollector:
         col.record(self._make_metric(first_pass=True))
         col.record(self._make_metric(first_pass=False))
         summary = col.summarize()
-        assert abs(summary.adversary_first_pass_rate - (2/3)) < 0.01
+        assert abs(summary.adversary_first_pass_rate - (2 / 3)) < 0.01
 
     def test_regression_flags_populated_on_quality_gate_failure(self):
         col = MetricsCollector("run-5")
@@ -312,6 +322,7 @@ class TestMetricsCollector:
 
 
 # ── Regression gates ──────────────────────────────────────────
+
 
 class TestRegressionGates:
     def test_gates_defined(self):
@@ -336,53 +347,60 @@ class TestRegressionGates:
 
 # ── Integration: run_training_camp L1 ─────────────────────────
 
+
 class TestRunTrainingCampL1:
     def test_l1_camp_runs_without_error(self):
         from training_camp.camp_runner import run_training_camp
+
         summary = run_training_camp(level_filter=ScenarioLevel.L1, verbose=False)
         assert summary is not None
 
     def test_l1_camp_runs_all_l1_scenarios(self):
         from training_camp.camp_runner import run_training_camp
+
         l1_count = len([s for s in ALL_SCENARIOS if s.level == ScenarioLevel.L1])
         summary = run_training_camp(level_filter=ScenarioLevel.L1, verbose=False)
         assert summary.total_scenarios == l1_count
 
     def test_l1_camp_summary_has_run_id(self):
         from training_camp.camp_runner import run_training_camp
+
         summary = run_training_camp(level_filter=ScenarioLevel.L1, verbose=False)
         assert summary.run_id.startswith("camp-")
 
     def test_l1_camp_quality_above_zero(self):
         from training_camp.camp_runner import run_training_camp
+
         summary = run_training_camp(level_filter=ScenarioLevel.L1, verbose=False)
         assert summary.avg_quality_score > 0.0
 
     def test_l1_camp_latency_recorded(self):
         from training_camp.camp_runner import run_training_camp
+
         summary = run_training_camp(level_filter=ScenarioLevel.L1, verbose=False)
         assert summary.avg_latency_ms >= 0.0
 
     def test_single_scenario_filter(self):
         from training_camp.camp_runner import run_training_camp
+
         summary = run_training_camp(scenario_id_filter="L1-01", verbose=False)
         assert summary.total_scenarios == 1
 
 
 # ── Integration: run_scenario ─────────────────────────────────
 
+
 class TestRunScenario:
     def test_run_scenario_returns_metrics(self):
-        from training_camp.camp_runner import run_scenario
-        from training_camp.metrics import MetricsCollector
-
-        from experiments.project_engram.engram.arbiter import ArbiterHealer, MockArbiterLLM
-        from experiments.project_engram.engram.delta_sync import DeltaSyncBus
-        from experiments.project_engram.engram.jit_context import (
+        from engram_v2.arbiter import ArbiterHealer, MockArbiterLLM
+        from engram_v2.delta_sync import DeltaSyncBus
+        from engram_v2.jit_context import (
             JITContextAnchor,
             MockContextFetcher,
         )
-        from experiments.project_engram.engram.tribunal_orchestrator import TribunalOrchestrator
+        from engram_v2.tribunal_orchestrator import TribunalOrchestrator
+        from training_camp.camp_runner import run_scenario
+        from training_camp.metrics import MetricsCollector
 
         scenario = next(s for s in ALL_SCENARIOS if s.scenario_id == "L1-01")
         tribunal = TribunalOrchestrator(
@@ -398,16 +416,15 @@ class TestRunScenario:
         assert metrics.engram_count > 0
 
     def test_run_scenario_records_to_collector(self):
-        from training_camp.camp_runner import run_scenario
-        from training_camp.metrics import MetricsCollector
-
-        from experiments.project_engram.engram.arbiter import ArbiterHealer, MockArbiterLLM
-        from experiments.project_engram.engram.delta_sync import DeltaSyncBus
-        from experiments.project_engram.engram.jit_context import (
+        from engram_v2.arbiter import ArbiterHealer, MockArbiterLLM
+        from engram_v2.delta_sync import DeltaSyncBus
+        from engram_v2.jit_context import (
             JITContextAnchor,
             MockContextFetcher,
         )
-        from experiments.project_engram.engram.tribunal_orchestrator import TribunalOrchestrator
+        from engram_v2.tribunal_orchestrator import TribunalOrchestrator
+        from training_camp.camp_runner import run_scenario
+        from training_camp.metrics import MetricsCollector
 
         scenario = next(s for s in ALL_SCENARIOS if s.scenario_id == "L1-02")
         tribunal = TribunalOrchestrator(
@@ -422,120 +439,144 @@ class TestRunScenario:
 
 # ── Integration: run_training_camp L2 ─────────────────────────
 
+
 class TestRunTrainingCampL2:
     def test_l2_camp_runs_without_error(self):
         from training_camp.camp_runner import run_training_camp
+
         summary = run_training_camp(level_filter=ScenarioLevel.L2, verbose=False)
         assert summary is not None
 
     def test_l2_camp_runs_all_l2_scenarios(self):
         from training_camp.camp_runner import run_training_camp
+
         l2_count = len([s for s in ALL_SCENARIOS if s.level == ScenarioLevel.L2])
         summary = run_training_camp(level_filter=ScenarioLevel.L2, verbose=False)
         assert summary.total_scenarios == l2_count
 
     def test_l2_camp_quality_above_zero(self):
         from training_camp.camp_runner import run_training_camp
+
         summary = run_training_camp(level_filter=ScenarioLevel.L2, verbose=False)
         assert summary.avg_quality_score > 0.0
 
 
 # ── Integration: run_training_camp L3 ─────────────────────────
 
+
 class TestRunTrainingCampL3:
     def test_l3_camp_runs_without_error(self):
         from training_camp.camp_runner import run_training_camp
+
         summary = run_training_camp(level_filter=ScenarioLevel.L3, verbose=False)
         assert summary is not None
 
     def test_l3_camp_runs_all_l3_scenarios(self):
         from training_camp.camp_runner import run_training_camp
+
         l3_count = len([s for s in ALL_SCENARIOS if s.level == ScenarioLevel.L3])
         summary = run_training_camp(level_filter=ScenarioLevel.L3, verbose=False)
         assert summary.total_scenarios == l3_count
 
     def test_l3_camp_quality_above_zero(self):
         from training_camp.camp_runner import run_training_camp
+
         summary = run_training_camp(level_filter=ScenarioLevel.L3, verbose=False)
         assert summary.avg_quality_score > 0.0
 
 
 # ── Integration: run_training_camp L4 ─────────────────────────
 
+
 class TestRunTrainingCampL4:
     def test_l4_camp_runs_without_error(self):
         from training_camp.camp_runner import run_training_camp
+
         summary = run_training_camp(level_filter=ScenarioLevel.L4, verbose=False)
         assert summary is not None
 
     def test_l4_camp_runs_all_l4_scenarios(self):
         from training_camp.camp_runner import run_training_camp
+
         l4_count = len([s for s in ALL_SCENARIOS if s.level == ScenarioLevel.L4])
         summary = run_training_camp(level_filter=ScenarioLevel.L4, verbose=False)
         assert summary.total_scenarios == l4_count
 
     def test_l4_camp_quality_above_zero(self):
         from training_camp.camp_runner import run_training_camp
+
         summary = run_training_camp(level_filter=ScenarioLevel.L4, verbose=False)
         assert summary.avg_quality_score > 0.0
 
     def test_l4_camp_has_run_id(self):
         from training_camp.camp_runner import run_training_camp
+
         summary = run_training_camp(level_filter=ScenarioLevel.L4, verbose=False)
         assert summary.run_id.startswith("camp-")
 
 
 # ── Integration: run_training_camp L5 ─────────────────────────
 
+
 class TestRunTrainingCampL5:
     def test_l5_camp_runs_without_error(self):
         from training_camp.camp_runner import run_training_camp
+
         summary = run_training_camp(level_filter=ScenarioLevel.L5, verbose=False)
         assert summary is not None
 
     def test_l5_camp_runs_all_l5_scenarios(self):
         from training_camp.camp_runner import run_training_camp
+
         l5_count = len([s for s in ALL_SCENARIOS if s.level == ScenarioLevel.L5])
         summary = run_training_camp(level_filter=ScenarioLevel.L5, verbose=False)
         assert summary.total_scenarios == l5_count
 
     def test_l5_camp_quality_above_zero(self):
         from training_camp.camp_runner import run_training_camp
+
         summary = run_training_camp(level_filter=ScenarioLevel.L5, verbose=False)
         assert summary.avg_quality_score > 0.0
 
     def test_l5_camp_adversary_seeds_checked(self):
         """L5 scenarios all have ≥ 2 seeds — adversary_rules_checked must reflect this."""
         from training_camp.camp_runner import run_training_camp
+
         summary = run_training_camp(level_filter=ScenarioLevel.L5, verbose=False)
         assert summary.total_scenarios >= 1
 
 
 # ── Integration: run_training_camp L6 ─────────────────────────
 
+
 class TestRunTrainingCampL6:
     def test_l6_camp_runs_without_error(self):
         from training_camp.camp_runner import run_training_camp
+
         summary = run_training_camp(level_filter=ScenarioLevel.L6, verbose=False)
         assert summary is not None
 
     def test_l6_camp_runs_all_l6_scenarios(self):
         from training_camp.camp_runner import run_training_camp
+
         l6_count = len([s for s in ALL_SCENARIOS if s.level == ScenarioLevel.L6])
         summary = run_training_camp(level_filter=ScenarioLevel.L6, verbose=False)
         assert summary.total_scenarios == l6_count
 
     def test_l6_camp_quality_above_zero(self):
         from training_camp.camp_runner import run_training_camp
+
         summary = run_training_camp(level_filter=ScenarioLevel.L6, verbose=False)
         assert summary.avg_quality_score > 0.0
 
     def test_l6_camp_has_run_id(self):
         from training_camp.camp_runner import run_training_camp
+
         summary = run_training_camp(level_filter=ScenarioLevel.L6, verbose=False)
         assert summary.run_id.startswith("camp-")
 
     def test_l6_camp_latency_recorded(self):
         from training_camp.camp_runner import run_training_camp
+
         summary = run_training_camp(level_filter=ScenarioLevel.L6, verbose=False)
         assert summary.avg_latency_ms >= 0.0

@@ -4,17 +4,18 @@ tooloo-engram V2 Public API.
 Re-exports the core V2 components for external consumers.
 """
 
-from experiments.project_engram.engram.adversary import AdversaryResult, AdversaryValidator
-from experiments.project_engram.engram.arbiter import ArbiterHealer, MitosisResult, MockArbiterLLM
-from experiments.project_engram.engram.delta_sync import DeltaSyncBus, MutationEventType
-from experiments.project_engram.engram.graph_store import EngramGraph
-from experiments.project_engram.engram.jit_context import (
+from .adversary import AdversaryResult, AdversaryValidator
+from .arbiter import ArbiterHealer, MitosisResult, MockArbiterLLM
+from .delta_sync import DeltaSyncBus, MutationEventType
+from .graph_store import EngramGraph
+from .jit_context import (
     JITContextAnchor,
     MockContextFetcher,
+    SotaContextFetcher,
     sweep_stale_engrams,
     upgrade_to_context_aware,
 )
-from experiments.project_engram.engram.schema import (
+from .schema import (
     ContextAwareEngram,
     Domain,
     EdgeType,
@@ -28,43 +29,44 @@ from experiments.project_engram.engram.schema import (
     TribunalVerdict,
     ValidationTribunal,
 )
-from experiments.project_engram.engram.tribunal_orchestrator import (
+from .tribunal_orchestrator import (
     TribunalOrchestrator,
     TribunalRunResult,
 )
 
 __all__ = [
+    "AdversaryResult",
+    # Adversary
+    "AdversaryValidator",
+    # Arbiter
+    "ArbiterHealer",
     # Schema
     "ContextAwareEngram",
-    "LogicEngram",
-    "SynapticEdge",
+    # Delta Sync
+    "DeltaSyncBus",
     "Domain",
     "EdgeType",
-    "Language",
+    # Graph
+    "EngramGraph",
+    "GraphAwareness",
+    # JIT
+    "JITContextAnchor",
     "JITContextMatrix",
     "JITSource",
     "JITSourceType",
-    "ValidationTribunal",
-    "TribunalVerdict",
-    "GraphAwareness",
-    # Graph
-    "EngramGraph",
-    # JIT
-    "JITContextAnchor",
-    "MockContextFetcher",
-    "sweep_stale_engrams",
-    "upgrade_to_context_aware",
-    # Adversary
-    "AdversaryValidator",
-    "AdversaryResult",
-    # Arbiter
-    "ArbiterHealer",
-    "MockArbiterLLM",
+    "Language",
+    "LogicEngram",
     "MitosisResult",
-    # Delta Sync
-    "DeltaSyncBus",
+    "MockArbiterLLM",
+    "MockContextFetcher",
     "MutationEventType",
+    "SotaContextFetcher",
+    "SynapticEdge",
     # Tribunal
     "TribunalOrchestrator",
     "TribunalRunResult",
+    "TribunalVerdict",
+    "ValidationTribunal",
+    "sweep_stale_engrams",
+    "upgrade_to_context_aware",
 ]

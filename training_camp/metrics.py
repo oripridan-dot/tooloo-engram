@@ -11,13 +11,9 @@ V2 quality floor: adversary_pass_rate ≥ 0.80, tribunal_confidence ≥ 90.0
 
 from __future__ import annotations
 
-import json
 import statistics
-import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from pathlib import Path
-from uuid import UUID
 
 
 @dataclass
@@ -157,7 +153,9 @@ class MetricsCollector:
         summary.avg_quality_score = statistics.mean(qualities) if qualities else 0.0
         summary.min_quality_score = min(qualities) if qualities else 0.0
         summary.total_heal_cycles = sum(r.heal_cycles for r in self._records)
-        summary.adversary_first_pass_rate = len(first_pass) / len(self._records) if self._records else 0.0
+        summary.adversary_first_pass_rate = (
+            len(first_pass) / len(self._records) if self._records else 0.0
+        )
 
         # ── Regression gate checks ────────────────────────────
         flags: list[str] = []
@@ -182,7 +180,8 @@ class MetricsCollector:
 
         heal_per_scenario = (
             summary.total_heal_cycles / summary.total_scenarios
-            if summary.total_scenarios > 0 else 0.0
+            if summary.total_scenarios > 0
+            else 0.0
         )
         if heal_per_scenario > REGRESSION_GATES["heal_cycles_per_scenario_max"]:
             flags.append(
@@ -219,7 +218,8 @@ def compare_to_baseline(summary: CampRunSummary) -> dict[str, dict]:
 
     latency_ratio = (
         summary.avg_latency_ms / MOCK_CAMP_BASELINE["avg_latency_ms"]
-        if MOCK_CAMP_BASELINE["avg_latency_ms"] > 0 else 0.0
+        if MOCK_CAMP_BASELINE["avg_latency_ms"] > 0
+        else 0.0
     )
     comparison["avg_latency_ms"] = {
         "mock": MOCK_CAMP_BASELINE["avg_latency_ms"],
@@ -230,7 +230,8 @@ def compare_to_baseline(summary: CampRunSummary) -> dict[str, dict]:
 
     p99_ratio = (
         summary.p99_latency_ms / MOCK_CAMP_BASELINE["p99_latency_ms"]
-        if MOCK_CAMP_BASELINE["p99_latency_ms"] > 0 else 0.0
+        if MOCK_CAMP_BASELINE["p99_latency_ms"] > 0
+        else 0.0
     )
     comparison["p99_latency_ms"] = {
         "mock": MOCK_CAMP_BASELINE["p99_latency_ms"],
@@ -245,7 +246,8 @@ def compare_to_baseline(summary: CampRunSummary) -> dict[str, dict]:
         "delta_ms": None,
         "ratio": round(
             summary.avg_quality_score / MOCK_CAMP_BASELINE["avg_quality_score"]
-            if MOCK_CAMP_BASELINE["avg_quality_score"] > 0 else 0.0,
+            if MOCK_CAMP_BASELINE["avg_quality_score"] > 0
+            else 0.0,
             3,
         ),
     }
@@ -256,7 +258,8 @@ def compare_to_baseline(summary: CampRunSummary) -> dict[str, dict]:
         "delta_ms": None,
         "ratio": round(
             summary.adversary_first_pass_rate / MOCK_CAMP_BASELINE["adversary_first_pass_rate"]
-            if MOCK_CAMP_BASELINE["adversary_first_pass_rate"] > 0 else 0.0,
+            if MOCK_CAMP_BASELINE["adversary_first_pass_rate"] > 0
+            else 0.0,
             3,
         ),
     }

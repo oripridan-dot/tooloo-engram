@@ -40,6 +40,7 @@ for _p in [str(_workspace), str(_tooloo_engram_root)]:
 # Load .env if available
 try:
     from dotenv import load_dotenv
+
     load_dotenv(_workspace / ".env")
 except ImportError:
     pass
@@ -48,6 +49,12 @@ _LIVE_CAMP = os.environ.get("LIVE_CAMP", "0").strip() in ("1", "true", "yes")
 _HAS_API_KEY = bool(os.environ.get("GEMINI_API_KEY") or os.environ.get("TOOLOO_GEMINI_API_KEY"))
 
 # ── Imports ───────────────────────────────────────────────────
+from engram_v2.adversary import AdversaryValidator
+from engram_v2.arbiter import ArbiterHealer, MockArbiterLLM
+from engram_v2.delta_sync import DeltaSyncBus
+from engram_v2.graph_store import EngramGraph
+from engram_v2.jit_context import JITContextAnchor, MockContextFetcher
+from engram_v2.tribunal_orchestrator import TribunalOrchestrator
 from report_generator import (
     CampReportGenerator,
     build_full_report,
@@ -66,18 +73,6 @@ from training_camp.metrics import (
 )
 from training_camp.scenarios import ALL_SCENARIOS, get_scenarios
 
-from experiments.project_engram.engram.adversary import AdversaryValidator
-from experiments.project_engram.engram.arbiter import ArbiterHealer, MockArbiterLLM
-from experiments.project_engram.engram.delta_sync import DeltaSyncBus
-from experiments.project_engram.engram.graph_store import EngramGraph
-from experiments.project_engram.engram.jit_context import JITContextAnchor, MockContextFetcher
-from experiments.project_engram.engram.schema import (
-    ContextAwareEngram,
-    Domain,
-    Language,
-)
-from experiments.project_engram.engram.tribunal_orchestrator import TribunalOrchestrator
-
 
 # ─────────────────────────────────────────────────────────────
 def _build_tribunal(mode: str) -> TribunalOrchestrator:
@@ -86,6 +81,7 @@ def _build_tribunal(mode: str) -> TribunalOrchestrator:
         from live_adapters import LiveArbiterLLM, LiveContextFetcher
 
         from experiments.project_engram.harness.live_llm import LiveLLM
+
         llm = LiveLLM()
         return TribunalOrchestrator(
             anchor=JITContextAnchor(fetcher=LiveContextFetcher(llm=llm)),
@@ -155,11 +151,10 @@ def _run_scenario_with_results(scenario, tribunal, collector):
 #  SECTION 1 — Report builder unit tests (no LLM, pure functions)
 # ═══════════════════════════════════════════════════════════════
 
-class TestReportBuilders:
 
+class TestReportBuilders:
     def test_build_scenario_report_has_required_sections(self) -> None:
         """build_scenario_report must produce markdown with all required sections."""
-        from training_camp.scenarios import ALL_SCENARIOS
 
         scenario = ALL_SCENARIOS[0]  # L1-01
         metrics = ScenarioMetrics(
@@ -250,7 +245,7 @@ class TestReportBuilders:
             completed_at="2025-01-01T00:02:00+00:00",
             total_scenarios=5,
             passed_scenarios=5,
-            avg_latency_ms=850.0,   # realistic LLM round-trip
+            avg_latency_ms=850.0,  # realistic LLM round-trip
             p99_latency_ms=2100.0,
             avg_quality_score=95.0,
             adversary_first_pass_rate=1.0,
@@ -274,7 +269,6 @@ class TestReportBuilders:
 
     def test_camp_report_generator_writes_files(self, tmp_path) -> None:
         """CampReportGenerator.write_scenario and write_full_report create real files."""
-        from training_camp.scenarios import ALL_SCENARIOS
 
         gen = CampReportGenerator(reports_dir=tmp_path, run_id="test-gen-001", mode="mock")
 
@@ -321,26 +315,36 @@ class TestReportBuilders:
 
     def test_json_report_is_valid_json(self, tmp_path) -> None:
         """Full camp JSON report must be valid JSON with expected top-level keys."""
-        from training_camp.scenarios import ALL_SCENARIOS
 
         gen = CampReportGenerator(reports_dir=tmp_path, run_id="test-json-001", mode="mock")
         # Record at least one scenario
         s = ALL_SCENARIOS[0]
         m = ScenarioMetrics(
-            scenario_id=s.scenario_id, level=s.level.value, passed=True,
-            total_latency_ms=30.0, jit_sources_added=2, adversary_rules_checked=4,
-            heal_cycles=0, quality_score=92.0, adversary_passed_on_first_try=True,
-            engram_count=1, edge_count=0,
+            scenario_id=s.scenario_id,
+            level=s.level.value,
+            passed=True,
+            total_latency_ms=30.0,
+            jit_sources_added=2,
+            adversary_rules_checked=4,
+            heal_cycles=0,
+            quality_score=92.0,
+            adversary_passed_on_first_try=True,
+            engram_count=1,
+            edge_count=0,
         )
         gen.write_scenario(s, m)
 
         summary = CampRunSummary(
             run_id="test-json-001",
             started_at="2025-01-01T00:00:00+00:00",
-            total_scenarios=1, passed_scenarios=1,
-            avg_quality_score=92.0, min_quality_score=92.0,
-            avg_latency_ms=30.0, p99_latency_ms=30.0,
-            adversary_first_pass_rate=1.0, regression_pass=True,
+            total_scenarios=1,
+            passed_scenarios=1,
+            avg_quality_score=92.0,
+            min_quality_score=92.0,
+            avg_latency_ms=30.0,
+            p99_latency_ms=30.0,
+            adversary_first_pass_rate=1.0,
+            regression_pass=True,
         )
         _, json_path = gen.write_full_report(summary)
         data = json.loads(json_path.read_text())
@@ -351,8 +355,8 @@ class TestReportBuilders:
 #  SECTION 2 — Full camp run (all 11 scenarios, offline/mock)
 # ═══════════════════════════════════════════════════════════════
 
-class TestFullCampOffline:
 
+class TestFullCampOffline:
     def test_full_camp_all_scenarios_pass(self, tmp_path) -> None:
         """All 11 training scenarios must pass and regression gates must be green."""
         run_id = f"camp-offline-{uuid.uuid4().hex[:8]}"
@@ -361,9 +365,9 @@ class TestFullCampOffline:
         tribunal = _build_tribunal("mock")
         scenarios = get_scenarios()
 
-        print(f"\n{'='*64}")
+        print(f"\n{'=' * 64}")
         print(f"  OFFLINE CAMP: {len(scenarios)} scenarios | run_id={run_id}")
-        print(f"{'='*64}")
+        print(f"{'=' * 64}")
 
         for scenario in scenarios:
             metrics, tri_results = _run_scenario_with_results(scenario, tribunal, collector)
@@ -390,12 +394,9 @@ class TestFullCampOffline:
         # ── Assertions ─────────────────────────────────────────
         assert summary.total_scenarios == len(scenarios)
         assert summary.passed_scenarios == summary.total_scenarios, (
-            f"Not all scenarios passed: "
-            f"{summary.passed_scenarios}/{summary.total_scenarios}"
+            f"Not all scenarios passed: {summary.passed_scenarios}/{summary.total_scenarios}"
         )
-        assert summary.regression_pass, (
-            f"Regression gates failed: {summary.regression_flags}"
-        )
+        assert summary.regression_pass, f"Regression gates failed: {summary.regression_flags}"
         assert summary.avg_quality_score >= 90.0, (
             f"Average quality below gate: {summary.avg_quality_score:.1f}"
         )
@@ -453,12 +454,12 @@ class TestFullCampOffline:
 #  SECTION 3 — Live camp (LIVE_CAMP=1 only)
 # ═══════════════════════════════════════════════════════════════
 
+
 @pytest.mark.skipif(
     not (_LIVE_CAMP and _HAS_API_KEY),
     reason="Set LIVE_CAMP=1 and GEMINI_API_KEY to run live camp",
 )
 class TestFullCampLive:
-
     def test_live_camp_l1_scenarios(self, tmp_path) -> None:
         """Run all L1 scenarios with live Gemini and produce a live camp report."""
         run_id = f"camp-live-l1-{uuid.uuid4().hex[:8]}"
@@ -469,9 +470,9 @@ class TestFullCampLive:
         # L1 only to keep cost low: 5 scenarios
         l1_scenarios = [s for s in scenarios if s.level.value == "L1"]
 
-        print(f"\n{'='*64}")
+        print(f"\n{'=' * 64}")
         print(f"  LIVE CAMP L1: {len(l1_scenarios)} scenarios | run_id={run_id}")
-        print(f"{'='*64}")
+        print(f"{'=' * 64}")
 
         for scenario in l1_scenarios:
             metrics, tri_results = _run_scenario_with_results(scenario, tribunal, collector)
@@ -508,13 +509,13 @@ class TestFullCampLive:
         tribunal = _build_tribunal("live")
         scenarios = get_scenarios(level=None)
 
-        print(f"\n{'='*64}")
+        print(f"\n{'=' * 64}")
         print(f"  LIVE CAMP L1-L6: {len(scenarios)} scenarios | run_id={run_id}")
-        print(f"{'='*64}")
+        print(f"{'=' * 64}")
 
         for scenario in scenarios:
             metrics, tri_results = _run_scenario_with_results(scenario, tribunal, collector)
-            step_path = gen.write_scenario(scenario, metrics, tri_results)
+            gen.write_scenario(scenario, metrics, tri_results)
 
             status = "✅ PASS" if metrics.passed else "❌ FAIL"
             print(
@@ -531,21 +532,18 @@ class TestFullCampLive:
 
         print(f"\n  Full live report : {md_path}")
         print(f"  JSON report      : {json_path}")
-        print(f"\n  Live latency baseline:")
+        print("\n  Live latency baseline:")
         print(f"    avg={summary.avg_latency_ms:.1f}ms  p99={summary.p99_latency_ms:.1f}ms")
-        print(f"    mock avg=31.7ms  mock p99=64.8ms")
+        print("    mock avg=31.7ms  mock p99=64.8ms")
 
         # ── Core assertions ─────────────────────────────────────
         assert summary.total_scenarios == len(scenarios), (
             f"Expected {len(scenarios)} scenarios, got {summary.total_scenarios}"
         )
         assert summary.passed_scenarios == summary.total_scenarios, (
-            f"Not all live scenarios passed: "
-            f"{summary.passed_scenarios}/{summary.total_scenarios}"
+            f"Not all live scenarios passed: {summary.passed_scenarios}/{summary.total_scenarios}"
         )
-        assert summary.regression_pass, (
-            f"Live camp regression flags: {summary.regression_flags}"
-        )
+        assert summary.regression_pass, f"Live camp regression flags: {summary.regression_flags}"
         assert summary.avg_quality_score >= 90.0, (
             f"Live avg quality below gate: {summary.avg_quality_score:.1f}"
         )

@@ -15,9 +15,8 @@ from __future__ import annotations
 
 import os
 import sys
-import uuid
 from pathlib import Path
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 import pytest
 
@@ -31,6 +30,7 @@ for _p in [str(_workspace), str(_tooloo_engram_root)]:
 # ── API key gate ─────────────────────────────────────────────
 try:
     from dotenv import load_dotenv
+
     load_dotenv(_workspace / ".env")
 except ImportError:
     pass
@@ -44,21 +44,21 @@ live_only = pytest.mark.skipif(
 
 
 # ── Imports ───────────────────────────────────────────────────
-from live_adapters import LiveArbiterLLM, LiveContextFetcher
-from training_camp.scenarios import ALL_SCENARIOS, get_scenarios
-
-from experiments.project_engram.engram.adversary import AdversaryValidator
-from experiments.project_engram.engram.arbiter import ArbiterHealer, ArbiterPayload
-from experiments.project_engram.engram.delta_sync import DeltaSyncBus, MutationEventType
-from experiments.project_engram.engram.graph_store import EngramGraph
-from experiments.project_engram.engram.jit_context import JITContextAnchor
-from experiments.project_engram.engram.schema import (
+from engram_v2.adversary import AdversaryValidator
+from engram_v2.arbiter import ArbiterHealer, ArbiterPayload
+from engram_v2.delta_sync import DeltaSyncBus, MutationEventType
+from engram_v2.graph_store import EngramGraph
+from engram_v2.jit_context import JITContextAnchor
+from engram_v2.schema import (
     ContextAwareEngram,
     Domain,
     JITSourceType,
     Language,
 )
-from experiments.project_engram.engram.tribunal_orchestrator import TribunalOrchestrator
+from engram_v2.tribunal_orchestrator import TribunalOrchestrator
+from live_adapters import LiveArbiterLLM, LiveContextFetcher
+from training_camp.scenarios import get_scenarios
+
 from experiments.project_engram.harness.live_llm import LiveLLM
 
 
@@ -91,8 +91,8 @@ def _make_payload(
 #  SECTION 1 — LiveArbiterLLM unit tests
 # ═══════════════════════════════════════════════════════════════
 
-class TestLiveArbiterLLM:
 
+class TestLiveArbiterLLM:
     @live_only
     def test_heals_hardcoded_secret(self) -> None:
         """LiveArbiterLLM must rewrite a hardcoded secret to env-var pattern."""
@@ -138,9 +138,7 @@ class TestLiveArbiterLLM:
 
         healed = arbiter.heal(payload)
         assert healed.strip()
-        assert "utcnow" not in healed, (
-            f"Healed output still contains deprecated utcnow: {healed!r}"
-        )
+        assert "utcnow" not in healed, f"Healed output still contains deprecated utcnow: {healed!r}"
         assert any(tok in healed for tok in ("UTC", "timezone", "tzinfo", "now(")), (
             f"Healed output does not use timezone-aware pattern: {healed!r}"
         )
@@ -177,7 +175,7 @@ class TestLiveArbiterLLM:
         payload = _make_payload(
             rule_id="SEC-001",
             failure_description="XSS: dangerouslySetInnerHTML without sanitisation",
-            failing_snippet='<div dangerouslySetInnerHTML={{__html: userInput}} />',
+            failing_snippet="<div dangerouslySetInnerHTML={{__html: userInput}} />",
             advisory_excerpts=[
                 "Never pass unsanitised user input to dangerouslySetInnerHTML.",
                 "Use DOMPurify.sanitize() before assignment.",
@@ -193,13 +191,12 @@ class TestLiveArbiterLLM:
         )
 
 
-
 # ═══════════════════════════════════════════════════════════════
 #  SECTION 2 — LiveContextFetcher unit tests
 # ═══════════════════════════════════════════════════════════════
 
-class TestLiveContextFetcher:
 
+class TestLiveContextFetcher:
     @live_only
     def test_backend_security_advisory(self) -> None:
         """Returns a non-empty JITSource for BACKEND × SECURITY_ADVISORY."""
@@ -285,8 +282,8 @@ class TestLiveContextFetcher:
 #  SECTION 3 — Full TribunalOrchestrator with live adapters
 # ═══════════════════════════════════════════════════════════════
 
-class TestLiveTribunal:
 
+class TestLiveTribunal:
     @live_only
     def test_l1_01_jwt_tribunal_live(self) -> None:
         """Full tribunal pipeline on L1-01 with live Gemini arbiter."""
@@ -354,9 +351,7 @@ class TestLiveTribunal:
 
         result = tribunal.run(graph, poisoned)
         # Adversary must flag the hardcoded secret (result passes only after healer fixes it)
-        assert result.adversary_rules_checked >= 1, (
-            "Adversary must have checked the engram"
-        )
+        assert result.adversary_rules_checked >= 1, "Adversary must have checked the engram"
         # After healing cycles: final must pass
         assert result.passed, (
             f"Poisoned engram not healed within {result.heal_cycles} cycles: "
@@ -398,15 +393,14 @@ class TestLiveTribunal:
             tribunal.run(graph, engram)
 
         total_cost = llm.total_cost
-        assert total_cost <= 0.10, (
-            f"Live tribunal cost exceeded $0.10: ${total_cost:.4f}"
-        )
+        assert total_cost <= 0.10, f"Live tribunal cost exceeded $0.10: ${total_cost:.4f}"
         print(f"\n  [live budget] total cost for 3 scenarios: ${total_cost:.5f}")
 
 
 # ═══════════════════════════════════════════════════════════════
 #  SECTION 4 — WebSocket Delta-Sync payload tests
 # ═══════════════════════════════════════════════════════════════
+
 
 class TestDeltaSyncWebSocketPayload:
     """Validates ENGRAM_MUTATION_COMMIT and ENGRAM_MUTATION_PENDING payloads.
@@ -423,8 +417,8 @@ class TestDeltaSyncWebSocketPayload:
 
     def test_pending_payload_emitted_on_adversary_fail_mock(self) -> None:
         """ENGRAM_MUTATION_PENDING must be emitted when adversary flags a violation."""
-        from experiments.project_engram.engram.arbiter import ArbiterHealer, MockArbiterLLM
-        from experiments.project_engram.engram.jit_context import (
+        from engram_v2.arbiter import ArbiterHealer, MockArbiterLLM
+        from engram_v2.jit_context import (
             JITContextAnchor,
             MockContextFetcher,
         )
@@ -470,8 +464,8 @@ class TestDeltaSyncWebSocketPayload:
 
     def test_commit_payload_structure_on_heal_mock(self) -> None:
         """ENGRAM_MUTATION_COMMIT payload must have all UI-required fields after mock heal."""
-        from experiments.project_engram.engram.arbiter import ArbiterHealer, MockArbiterLLM
-        from experiments.project_engram.engram.jit_context import (
+        from engram_v2.arbiter import ArbiterHealer, MockArbiterLLM
+        from engram_v2.jit_context import (
             JITContextAnchor,
             MockContextFetcher,
         )
@@ -511,8 +505,13 @@ class TestDeltaSyncWebSocketPayload:
 
         # ── Validate UI contract fields ──────────────────────
         commit_payload = commit_events[0].payload
-        required_top_level = {"dropped_nodes", "upserted_nodes", "repointed_edges",
-                               "heal_latency_ms", "heal_cycle"}
+        required_top_level = {
+            "dropped_nodes",
+            "upserted_nodes",
+            "repointed_edges",
+            "heal_latency_ms",
+            "heal_cycle",
+        }
         missing = required_top_level - set(commit_payload.keys())
         assert not missing, (
             f"COMMIT payload missing UI-required fields: {missing}\n"
@@ -525,21 +524,24 @@ class TestDeltaSyncWebSocketPayload:
             "upserted_nodes must be a list of healed engram descriptors"
         )
         assert commit_payload["heal_cycle"] >= 1, "heal_cycle must be ≥ 1"
-        assert commit_payload["heal_latency_ms"] >= 0.0, (
-            "heal_latency_ms must be non-negative"
-        )
+        assert commit_payload["heal_latency_ms"] >= 0.0, "heal_latency_ms must be non-negative"
         # Each upserted node must carry the fields the UI BrandVault component needs
         for node in commit_payload["upserted_nodes"]:
-            for field_name in ("engram_id", "domain", "intent", "module_path",
-                               "mandate_level", "tribunal_verdict", "confidence_score"):
-                assert field_name in node, (
-                    f"upserted_node missing UI field '{field_name}': {node}"
-                )
+            for field_name in (
+                "engram_id",
+                "domain",
+                "intent",
+                "module_path",
+                "mandate_level",
+                "tribunal_verdict",
+                "confidence_score",
+            ):
+                assert field_name in node, f"upserted_node missing UI field '{field_name}': {node}"
 
     def test_no_commit_emitted_on_clean_engram_mock(self) -> None:
         """A clean engram that passes adversary must NOT emit COMMIT (no heal needed)."""
-        from experiments.project_engram.engram.arbiter import ArbiterHealer, MockArbiterLLM
-        from experiments.project_engram.engram.jit_context import (
+        from engram_v2.arbiter import ArbiterHealer, MockArbiterLLM
+        from engram_v2.jit_context import (
             JITContextAnchor,
             MockContextFetcher,
         )
@@ -585,8 +587,8 @@ class TestDeltaSyncWebSocketPayload:
 
     def test_event_log_replay_buffer_populated(self) -> None:
         """DeltaSyncBus replay buffer must contain recent events for reconnect hydration."""
-        from experiments.project_engram.engram.arbiter import ArbiterHealer, MockArbiterLLM
-        from experiments.project_engram.engram.jit_context import (
+        from engram_v2.arbiter import ArbiterHealer, MockArbiterLLM
+        from engram_v2.jit_context import (
             JITContextAnchor,
             MockContextFetcher,
         )
@@ -614,9 +616,7 @@ class TestDeltaSyncWebSocketPayload:
         tribunal.run(graph, poisoned)
 
         recent = bus.get_recent_events(limit=20)
-        assert len(recent) >= 1, (
-            "Replay buffer must be non-empty after a tribunal run with events"
-        )
+        assert len(recent) >= 1, "Replay buffer must be non-empty after a tribunal run with events"
         event_types = {e.event_type for e in recent}
         assert MutationEventType.ENGRAM_MUTATION_PENDING in event_types, (
             "Replay buffer must contain the PENDING event for reconnect hydration"
@@ -695,8 +695,15 @@ class TestDeltaSyncWebSocketPayload:
 
         healed_node = commit_payload["upserted_nodes"][0]
         # Verify all UI BrandVault fields are present
-        for field_name in ("engram_id", "domain", "intent", "module_path",
-                           "mandate_level", "tribunal_verdict", "confidence_score"):
+        for field_name in (
+            "engram_id",
+            "domain",
+            "intent",
+            "module_path",
+            "mandate_level",
+            "tribunal_verdict",
+            "confidence_score",
+        ):
             assert field_name in healed_node, (
                 f"Live healed node missing UI field '{field_name}': {healed_node}"
             )
@@ -709,6 +716,7 @@ class TestDeltaSyncWebSocketPayload:
         )
 
         import json
+
         # Whole payload must be JSON-serialisable — required for WebSocket fan-out
         commit_json = json.dumps(commit_events[0].to_dict())
         assert len(commit_json) > 0, "COMMIT event must serialise to non-empty JSON"

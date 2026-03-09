@@ -1,6 +1,8 @@
 # tooloo-engram — TooLoo V2 Engram Ecosystem
 > **Foundation for TooLoo V2.** The graph-native, JIT-anchored, self-healing AI generation engine.
 
+> **Status snapshot (2026-03-08):** Phase 1 live benchmark complete. Verified: **100 tests passing (2 live-only skips)**. Core+Engram global snapshot: **3029 tests total (2929 core + 100 engram)**.
+
 This repository is the dedicated proving ground for the **Engram Architecture** — the technology that makes TooLoo V2 unmatched in accuracy, speed, and real-world awareness.
 
 ---
@@ -75,6 +77,18 @@ tooloo-engram/
 | V2 Tribunal Validation | 🔄 IN PROGRESS | Target: adversary latency < 10ms (offline) |
 | V2 Real-World Use Cases | 🔄 IN PROGRESS | Target: 5 use cases × L3 quality ≥ 97 |
 | V2 Full-Stack App | ⏳ PLANNED | KPI completion gate |
+
+---
+
+## Gemini Consultation Input
+
+If you are consulting Gemini Web before enabling Engram in production, provide:
+
+1. `/workspaces/tooloo-core/GEMINI_SYSTEM_REVIEW.md` (primary decision packet)
+2. `/workspaces/tooloo-core/docs/ROADMAP.md` (delivery context)
+3. `/workspaces/tooloo-core/TOOLOO_MASTER_PLAN.md` (historical + governance context)
+
+Ask for a **GO / HOLD / REJECT** migration verdict with a phased P0/P1/P2 plan and explicit risk controls.
 
 ---
 

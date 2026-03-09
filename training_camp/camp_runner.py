@@ -29,22 +29,20 @@ for _p in (str(_workspace_root), str(_engram_root)):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from experiments.project_engram.engram.adversary import AdversaryValidator
-from experiments.project_engram.engram.arbiter import ArbiterHealer, MockArbiterLLM
-from experiments.project_engram.engram.delta_sync import DeltaSyncBus
-from experiments.project_engram.engram.graph_store import EngramGraph
-from experiments.project_engram.engram.jit_context import JITContextAnchor, MockContextFetcher
-from experiments.project_engram.engram.schema import (
+from engram_v2.adversary import AdversaryValidator
+from engram_v2.arbiter import ArbiterHealer, MockArbiterLLM
+from engram_v2.delta_sync import DeltaSyncBus
+from engram_v2.graph_store import EngramGraph
+from engram_v2.jit_context import JITContextAnchor, MockContextFetcher
+from engram_v2.schema import (
     ContextAwareEngram,
     Domain,
-    EdgeType,
     Language,
-    SynapticEdge,
 )
-from experiments.project_engram.engram.tribunal_orchestrator import TribunalOrchestrator
+from engram_v2.tribunal_orchestrator import TribunalOrchestrator
 
 from .metrics import CampRunSummary, MetricsCollector, ScenarioMetrics
-from .scenarios import ALL_SCENARIOS, ScenarioLevel, TrainingScenario, get_scenarios
+from .scenarios import ScenarioLevel, TrainingScenario, get_scenarios
 
 
 def _make_engrams_for_scenario(scenario: TrainingScenario) -> list[ContextAwareEngram]:
@@ -63,12 +61,12 @@ def _make_engrams_for_scenario(scenario: TrainingScenario) -> list[ContextAwareE
         logic_body = _stub_body(scenario.mandate_text, domain_str, i)
 
         engram = ContextAwareEngram(
-            intent=f"{scenario.title} [{domain_str}] component {i+1}",
-            ast_signature=f"def {domain_str}_component_{i+1}():",
+            intent=f"{scenario.title} [{domain_str}] component {i + 1}",
+            ast_signature=f"def {domain_str}_component_{i + 1}():",
             logic_body=logic_body,
             domain=domain,
             language=language,
-            module_path=f"{domain_str}/component_{i+1}.py",
+            module_path=f"{domain_str}/component_{i + 1}.py",
             mandate_level=scenario.level.value,
         )
         engrams.append(engram)
@@ -113,7 +111,7 @@ def _stub_body(mandate: str, domain: str, idx: int) -> str:
         return (
             f"from datetime import UTC, datetime\n\n"
             f"def component_{idx}(input_data):\n"
-            f"    \"\"\"Auto-generated for: {mandate[:60]}\"\"\"\n"
+            f'    """Auto-generated for: {mandate[:60]}"""\n'
             f"    result = {{'processed': True, 'ts': datetime.now(UTC).isoformat()}}\n"
             f"    return result"
         )
@@ -233,10 +231,10 @@ def run_training_camp(
         scenarios = [s for s in scenarios if s.scenario_id == scenario_id_filter]
 
     if verbose:
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print(f"TOOLOO ENGRAM V2 — TRAINING CAMP [{run_id}]")
         print(f"Scenarios: {len(scenarios)} | Mode: {mode_label}")
-        print(f"{'='*60}")
+        print(f"{'=' * 60}")
 
     for scenario in scenarios:
         metrics = run_scenario(scenario, tribunal, collector)
@@ -253,18 +251,24 @@ def run_training_camp(
     summary = collector.summarize()
 
     if verbose:
-        print(f"\n{'─'*60}")
-        print(f"RESULTS: {summary.passed_scenarios}/{summary.total_scenarios} passed"
-              f" ({summary.pass_rate:.0%})")
-        print(f"Avg quality: {summary.avg_quality_score:.1f} | "
-              f"Avg latency: {summary.avg_latency_ms:.0f}ms")
-        print(f"Total heal cycles: {summary.total_heal_cycles} | "
-              f"First-pass rate: {summary.adversary_first_pass_rate:.0%}")
+        print(f"\n{'─' * 60}")
+        print(
+            f"RESULTS: {summary.passed_scenarios}/{summary.total_scenarios} passed"
+            f" ({summary.pass_rate:.0%})"
+        )
+        print(
+            f"Avg quality: {summary.avg_quality_score:.1f} | "
+            f"Avg latency: {summary.avg_latency_ms:.0f}ms"
+        )
+        print(
+            f"Total heal cycles: {summary.total_heal_cycles} | "
+            f"First-pass rate: {summary.adversary_first_pass_rate:.0%}"
+        )
         if summary.regression_pass:
             print("REGRESSION GATES: ✓ ALL GREEN")
         else:
             print(f"REGRESSION FLAGS: {summary.regression_flags}")
-        print(f"{'='*60}\n")
+        print(f"{'=' * 60}\n")
 
     return summary
 
@@ -273,10 +277,16 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(description="Run Engram V2 Training Camp")
-    parser.add_argument("--level", choices=["L1", "L2", "L3", "L4", "L5", "L6"], help="Filter by level")
+    parser.add_argument(
+        "--level", choices=["L1", "L2", "L3", "L4", "L5", "L6"], help="Filter by level"
+    )
     parser.add_argument("--scenario", help="Run a specific scenario by ID")
-    parser.add_argument("--mode", choices=["mock", "live"], default="mock",
-                        help="mock (offline, no API calls) or live (Gemini API)")
+    parser.add_argument(
+        "--mode",
+        choices=["mock", "live"],
+        default="mock",
+        help="mock (offline, no API calls) or live (Gemini API)",
+    )
     parser.add_argument("--quiet", action="store_true", help="Suppress output")
     args = parser.parse_args()
 

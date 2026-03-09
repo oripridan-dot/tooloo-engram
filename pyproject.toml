@@ -1,6 +1,6 @@
 [build-system]
 requires = ["setuptools>=68"]
-build-backend = "setuptools.backends.legacy:build"
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "tooloo-engram"
@@ -13,6 +13,31 @@ dependencies = [
     "pytest-asyncio>=0.23",
 ]
 
+[tool.setuptools.packages.find]
+include = ["engram_v2*"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+# RUF001/RUF002: × and – used intentionally in benchmark report strings and docstrings
+ignore = ["RUF001", "RUF002"]
+
+[tool.ruff.lint.per-file-ignores]
+"engram_v2/adversary.py" = ["E402"]
+"engram_v2/compiler_drone.py" = ["E402"]
+"engram_v2/delta_sync.py" = ["E402"]
+"engram_v2/graph_healer.py" = ["E402"]
+"engram_v2/graph_store.py" = ["E402"]
+"live_adapters.py" = ["E402"]
+"report_generator.py" = ["E402"]
+"tests/conftest.py" = ["E402"]
+"tests/test_live_tribunal.py" = ["E402"]
+"tests/test_camp_report.py" = ["E402"]
+"training_camp/camp_runner.py" = ["E402"]
+"training_camp/metrics.py" = ["E402"]

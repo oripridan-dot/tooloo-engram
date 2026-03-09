@@ -11,7 +11,7 @@ can use real or mock implementations without any changes.
 
 Usage:
     from tooloo_engram.live_adapters import LiveArbiterLLM, LiveContextFetcher
-    from experiments.project_engram.engram.tribunal_orchestrator import TribunalOrchestrator
+    from engram_v2.tribunal_orchestrator import TribunalOrchestrator
 
     llm = LiveArbiterLLM()                    # reads GEMINI_API_KEY from env
     fetcher = LiveContextFetcher(llm=llm.llm) # re-uses same client
@@ -24,49 +24,73 @@ Usage:
 from __future__ import annotations
 
 import hashlib
-import os
 import sys
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING
 
 # Workspace-root on path
 _root = Path(__file__).parent.parent
 if str(_root) not in sys.path:
     sys.path.insert(0, str(_root))
 
-from experiments.project_engram.engram.arbiter import ArbiterPayload
-from experiments.project_engram.engram.jit_context import ContextFetcher
-from experiments.project_engram.engram.schema import (
-    ContextAwareEngram,
+from engram_v2.schema import (
     Domain,
     JITSource,
     JITSourceType,
 )
+
 from experiments.project_engram.harness.live_llm import LiveLLM
+
+if TYPE_CHECKING:
+    from engram_v2.arbiter import ArbiterPayload
 
 # ── Domain → query templates for JIT context synthesis ──────
 
 _DOMAIN_QUERIES: dict[Domain, list[tuple[JITSourceType, str]]] = {
     Domain.BACKEND: [
-        (JITSourceType.SECURITY_ADVISORY, "OWASP Top 10 backend security vulnerabilities Python 2025 — list the top risks and how to prevent them"),
-        (JITSourceType.BEST_PRACTICE, "Python async FastAPI backend best practices 2025 — concise bullet points"),
-        (JITSourceType.DEPRECATION_NOTICE, "Python 3.12 deprecated APIs and breaking changes — list what to avoid"),
-        (JITSourceType.PERFORMANCE_BENCHMARK, "FastAPI Python backend performance bottlenecks and remedies — concise list"),
+        (
+            JITSourceType.SECURITY_ADVISORY,
+            "OWASP Top 10 backend security vulnerabilities Python 2025 — list the top risks and how to prevent them",
+        ),
+        (
+            JITSourceType.BEST_PRACTICE,
+            "Python async FastAPI backend best practices 2025 — concise bullet points",
+        ),
+        (
+            JITSourceType.DEPRECATION_NOTICE,
+            "Python 3.12 deprecated APIs and breaking changes — list what to avoid",
+        ),
+        (
+            JITSourceType.PERFORMANCE_BENCHMARK,
+            "FastAPI Python backend performance bottlenecks and remedies — concise list",
+        ),
     ],
     Domain.FRONTEND: [
-        (JITSourceType.SECURITY_ADVISORY, "React XSS vulnerabilities and prevention techniques 2025 — concise list"),
+        (
+            JITSourceType.SECURITY_ADVISORY,
+            "React XSS vulnerabilities and prevention techniques 2025 — concise list",
+        ),
         (JITSourceType.BEST_PRACTICE, "React hooks best practices 2025 — concise bullet points"),
         (JITSourceType.DEPRECATION_NOTICE, "React deprecated APIs 2025 — what to avoid"),
-        (JITSourceType.PERFORMANCE_BENCHMARK, "React rendering performance best practices — concise list"),
+        (
+            JITSourceType.PERFORMANCE_BENCHMARK,
+            "React rendering performance best practices — concise list",
+        ),
     ],
     Domain.TEST: [
-        (JITSourceType.BEST_PRACTICE, "pytest best practices 2025 — fixtures, parameterize, isolation patterns"),
+        (
+            JITSourceType.BEST_PRACTICE,
+            "pytest best practices 2025 — fixtures, parameterize, isolation patterns",
+        ),
         (JITSourceType.DEPRECATION_NOTICE, "pytest deprecated patterns — what to avoid"),
     ],
     Domain.CONFIG: [
-        (JITSourceType.SECURITY_ADVISORY, "Configuration security: secrets in env vars, never hardcoded — best practices"),
+        (
+            JITSourceType.SECURITY_ADVISORY,
+            "Configuration security: secrets in env vars, never hardcoded — best practices",
+        ),
         (JITSourceType.BEST_PRACTICE, "12-factor app configuration best practices — concise list"),
     ],
 }
@@ -136,9 +160,11 @@ class LiveContextFetcher:
             )
         except Exception:
             # Graceful degradation
-            excerpt = f"[LiveFetch unavailable] Use safe patterns for {source_type.value} in {domain}."
+            excerpt = (
+                f"[LiveFetch unavailable] Use safe patterns for {source_type.value} in {domain}."
+            )
 
-        latency_ms = (time.monotonic() - t0) * 1000
+        (time.monotonic() - t0) * 1000
         content_hash = hashlib.sha256(excerpt.encode()).hexdigest()[:16]
 
         return JITSource(
@@ -175,10 +201,7 @@ class LiveContextFetcher:
     ) -> list[JITSource]:
         """Fetch all JIT sources for a given domain."""
         queries = _DOMAIN_QUERIES.get(domain, _DOMAIN_QUERIES[Domain.BACKEND])
-        return [
-            self.fetch(source_type, intent_hint, domain.value)
-            for source_type, _ in queries
-        ]
+        return [self.fetch(source_type, intent_hint, domain.value) for source_type, _ in queries]
 
 
 # ── Live Arbiter LLM ──────────────────────────────────────────
@@ -236,9 +259,6 @@ class LiveArbiterLLM:
         # Strip markdown code fences if Gemini adds them
         if healed.startswith("```"):
             lines = healed.split("\n")
-            inner = [
-                l for l in lines
-                if not l.startswith("```")
-            ]
+            inner = [line for line in lines if not line.startswith("```")]
             healed = "\n".join(inner).strip()
         return healed

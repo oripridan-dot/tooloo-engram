@@ -23,7 +23,7 @@ import sys
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING
 
 # Workspace root
 _root = Path(__file__).parent.parent
@@ -37,12 +37,15 @@ from training_camp.metrics import (
     ScenarioMetrics,
     compare_to_baseline,
 )
-from training_camp.scenarios import TrainingScenario
+
+if TYPE_CHECKING:
+    from training_camp.scenarios import TrainingScenario
 
 _REPORTS_DIR = Path(__file__).parent / "reports"
 
 
 # ── Per-scenario step report ───────────────────────────────────
+
 
 def _scenario_header(scenario: TrainingScenario, metrics: ScenarioMetrics) -> str:
     status = "✅ PASS" if metrics.passed else "❌ FAIL"
@@ -122,6 +125,7 @@ def build_scenario_report(
 
 # ── Full camp report ───────────────────────────────────────────
 
+
 def _kpi_table(summary: CampRunSummary) -> str:
     return f"""## Camp KPIs
 
@@ -147,7 +151,9 @@ def _regression_gate_section(summary: CampRunSummary) -> str:
 
 def _per_scenario_table(all_metrics: list[ScenarioMetrics]) -> str:
     lines = ["## Per-Scenario Results\n"]
-    lines.append("| Scenario | Level | Status | Quality | Latency (ms) | JIT | Heals | Adversary 1st |")
+    lines.append(
+        "| Scenario | Level | Status | Quality | Latency (ms) | JIT | Heals | Adversary 1st |"
+    )
     lines.append("|---|---|---|---|---|---|---|---|")
     for m in all_metrics:
         status = "✅" if m.passed else "❌"
@@ -279,6 +285,7 @@ def build_full_report(
 
 # ── CampReportGenerator ────────────────────────────────────────
 
+
 @dataclass
 class CampReportGenerator:
     """Writes per-scenario step reports and the final camp report to disk."""
@@ -337,13 +344,21 @@ class CampReportGenerator:
 
     def print_summary(self, summary: CampRunSummary) -> None:
         """Print a compact summary to stdout — useful after write_full_report."""
-        print(f"\n{'='*64}")
+        print(f"\n{'=' * 64}")
         print(f"  ENGRAM V2 CAMP REPORT  [{self.run_id}]  mode={self.mode.upper()}")
-        print(f"{'='*64}")
-        print(f"  Scenarios : {summary.passed_scenarios}/{summary.total_scenarios} passed ({summary.pass_rate:.0%})")
-        print(f"  Quality   : avg={summary.avg_quality_score:.1f}  min={summary.min_quality_score:.1f}")
-        print(f"  Latency   : avg={summary.avg_latency_ms:.1f}ms  p99={summary.p99_latency_ms:.1f}ms")
-        print(f"  Heals     : {summary.total_heal_cycles} total  |  1st-pass={summary.adversary_first_pass_rate:.0%}")
+        print(f"{'=' * 64}")
+        print(
+            f"  Scenarios : {summary.passed_scenarios}/{summary.total_scenarios} passed ({summary.pass_rate:.0%})"
+        )
+        print(
+            f"  Quality   : avg={summary.avg_quality_score:.1f}  min={summary.min_quality_score:.1f}"
+        )
+        print(
+            f"  Latency   : avg={summary.avg_latency_ms:.1f}ms  p99={summary.p99_latency_ms:.1f}ms"
+        )
+        print(
+            f"  Heals     : {summary.total_heal_cycles} total  |  1st-pass={summary.adversary_first_pass_rate:.0%}"
+        )
         if summary.regression_pass:
             print("  Gates     : ✅ ALL GREEN")
         else:
@@ -354,4 +369,4 @@ class CampReportGenerator:
             print(f"\n  Report MD  : {md_path}")
         if json_path.exists():
             print(f"  Report JSON: {json_path}")
-        print(f"{'='*64}\n")
+        print(f"{'=' * 64}\n")

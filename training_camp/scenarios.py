@@ -28,9 +28,9 @@ class ScenarioLevel(StrEnum):
 class AdversarySeed:
     """A deliberate code flaw injected to verify the adversary catches it."""
 
-    rule_id: str          # e.g. "SEC-001"
+    rule_id: str  # e.g. "SEC-001"
     description: str
-    poisoned_code: str    # code snippet that should trigger the rule
+    poisoned_code: str  # code snippet that should trigger the rule
 
 
 @dataclass
@@ -110,7 +110,7 @@ L1_SCENARIOS: list[TrainingScenario] = [
             AdversarySeed(
                 rule_id="SEC-001",
                 description="SQL string interpolation",
-                poisoned_code='query = f"SELECT * FROM users WHERE email = \'{email}\'"',
+                poisoned_code="query = f\"SELECT * FROM users WHERE email = '{email}'\"",
             )
         ],
         expected_min_quality=96.0,
@@ -201,7 +201,7 @@ L3_SCENARIOS: list[TrainingScenario] = [
             AdversarySeed(
                 rule_id="SEC-001",
                 description="Unvalidated room ID in SQL",
-                poisoned_code='f"SELECT * FROM rooms WHERE id = \'{room_id}\'"',
+                poisoned_code="f\"SELECT * FROM rooms WHERE id = '{room_id}'\"",
             ),
             AdversarySeed(
                 rule_id="PERF-001",
@@ -281,7 +281,7 @@ L4_SCENARIOS: list[TrainingScenario] = [
             AdversarySeed(
                 rule_id="SEC-001",
                 description="Unparameterized order ID in SQL lookup",
-                poisoned_code='f"SELECT * FROM orders WHERE id = \'{order_id}\'"',
+                poisoned_code="f\"SELECT * FROM orders WHERE id = '{order_id}'\"",
             ),
             AdversarySeed(
                 rule_id="PERF-002",
@@ -447,7 +447,7 @@ L6_SCENARIOS: list[TrainingScenario] = [
             AdversarySeed(
                 rule_id="SEC-001",
                 description="SQL injection in SCIM user lookup endpoint",
-                poisoned_code='f"SELECT * FROM users WHERE username = \'{username}\'"',
+                poisoned_code="f\"SELECT * FROM users WHERE username = '{username}'\"",
             ),
             AdversarySeed(
                 rule_id="SEC-003",
@@ -509,8 +509,7 @@ L6_SCENARIOS: list[TrainingScenario] = [
 # ── Registry ──────────────────────────────────────────────────
 
 ALL_SCENARIOS: list[TrainingScenario] = (
-    L1_SCENARIOS + L2_SCENARIOS + L3_SCENARIOS
-    + L4_SCENARIOS + L5_SCENARIOS + L6_SCENARIOS
+    L1_SCENARIOS + L2_SCENARIOS + L3_SCENARIOS + L4_SCENARIOS + L5_SCENARIOS + L6_SCENARIOS
 )
 
 SCENARIO_BY_ID: dict[str, TrainingScenario] = {s.scenario_id: s for s in ALL_SCENARIOS}
