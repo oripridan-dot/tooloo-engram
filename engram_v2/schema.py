@@ -16,12 +16,20 @@ from uuid import UUID, uuid4
 
 
 class EdgeType(StrEnum):
+    # ── Execution Graph edges (Layer 1 — The What) ────────────
     IMPORTS = "imports"
     CALLS = "calls"
     INHERITS = "inherits"
     TESTS = "tests"
-    RESOLVES = "resolves"  # source fixes/resolves a bug in target
-    CAUSES = "causes"  # source triggers/causes behaviour in target
+    RESOLVES = "resolves"   # source fixes/resolves a bug in target
+    CAUSES = "causes"       # source triggers/causes behaviour in target
+    # ── Cognitive Graph edges (Layer 2 — The Why & How) ───────
+    IMPLEMENTED_BY = "implemented_by"       # IntentEngram → LogicEngram
+    FREQUENTLY_USED_WITH = "frequently_used_with"  # IntentEngram ↔ IntentEngram
+    ALTERNATIVE_TO = "alternative_to"       # IntentEngram ↔ IntentEngram
+    SPECIALISES = "specialises"             # narrower IntentEngram → broader IntentEngram
+    DEPRECATED_BY = "deprecated_by"        # superseded IntentEngram → replacement
+    SECURITY_GOVERNS = "security_governs"  # security IntentEngram → domain IntentEngrams
 
 
 class Domain(StrEnum):
@@ -460,3 +468,136 @@ class ContextAwareEngram(LogicEngram):
             created_at=engram.created_at,
             mandate_level=mandate_level,
         )
+
+
+# ════════════════════════════════════════════════════════════════
+# Layer 2 — The Cognitive Graph  (The Why & How)
+#
+# IntentEngram stores the *meaning* behind code, not the code itself.
+# It lives in the Cognitive Graph, linked to the Execution Graph via
+# semantic edges (IMPLEMENTED_BY, FREQUENTLY_USED_WITH, ALTERNATIVE_TO …).
+#
+# This transforms the repository from a library of code into a network
+# of pure logic and intention — the engine's "mental map".
+# ════════════════════════════════════════════════════════════════
+
+
+class IntentDomain(StrEnum):
+    """
+    Cross-cutting conceptual domains for the Cognitive Graph.
+
+    Deliberately broader than Domain (execution) — one IntentEngram may
+    span multiple execution domains.
+    """
+    NETWORKING = "networking"
+    UI_REACTIVITY = "ui_reactivity"
+    SECURITY = "security"
+    DATA_PERSISTENCE = "data_persistence"
+    AUTHENTICATION = "authentication"
+    REAL_TIME_SYNC = "real_time_sync"
+    CHAT_INTERACTION = "chat_interaction"
+    CODE_GENERATION = "code_generation"
+    GRAPH_REASONING = "graph_reasoning"
+    PERFORMANCE = "performance"
+    OBSERVABILITY = "observability"
+    ORCHESTRATION = "orchestration"
+    GENERAL = "general"
+
+
+@dataclass
+class IntentEngram:
+    """
+    Layer-2 abstract node — stores *why* and *how*, never code.
+
+    An IntentEngram captures a conceptual pattern (e.g. "Real-Time
+    Bidirectional Sync") and connects to concrete LogicEngrams via
+    IMPLEMENTED_BY edges and to sibling concepts via FREQUENTLY_USED_WITH
+    or ALTERNATIVE_TO edges.
+
+    This is the node type stored in the Cognitive Graph layer of
+    CognitiveDualGraph.  It is also the primary payload in .cog.json
+    files written to tooloo-memory.
+
+    Key design invariant: `logic_body` is ALWAYS empty.  Any code
+    belongs in a LogicEngram on Layer 1.
+    """
+
+    # Semantic identity
+    intent_id: UUID = field(default_factory=uuid4)
+    concept_label: str = ""                 # "Real-Time Bidirectional Sync"
+    core_meaning: str = ""                  # 1-3 sentence dense definition
+    domains: list[IntentDomain] = field(default_factory=list)
+
+    # Relational index (populated by CognitiveDualGraph)
+    known_implementations: list[UUID] = field(default_factory=list)   # LogicEngram IDs
+    common_partners: list[UUID] = field(default_factory=list)          # IntentEngram IDs
+    alternatives: list[UUID] = field(default_factory=list)             # IntentEngram IDs
+
+    # Situational context
+    common_scenarios: list[str] = field(default_factory=list)
+    security_posture: str = ""              # security note (OWASP-aware)
+    performance_notes: str = ""            # known bottlenecks / trade-offs
+    deprecation_note: str = ""             # empty unless superseded
+
+    # Provenance
+    confidence: float = 1.0
+    source_url: str = ""
+    version_locked: str = ""               # e.g. "react>=18, websockets>=12"
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+
+    @property
+    def is_deprecated(self) -> bool:
+        return bool(self.deprecation_note)
+
+    @property
+    def checksum(self) -> str:
+        combined = self.concept_label + self.core_meaning + self.security_posture
+        return hashlib.sha256(combined.encode()).hexdigest()[:16]
+
+    def to_dict(self) -> dict:
+        return {
+            "intent_id": str(self.intent_id),
+            "type": "IntentEngram",
+            "concept_label": self.concept_label,
+            "core_meaning": self.core_meaning,
+            "domains": [d.value for d in self.domains],
+            "known_implementations": [str(uid) for uid in self.known_implementations],
+            "common_partners": [str(uid) for uid in self.common_partners],
+            "alternatives": [str(uid) for uid in self.alternatives],
+            "common_scenarios": self.common_scenarios,
+            "security_posture": self.security_posture,
+            "performance_notes": self.performance_notes,
+            "deprecation_note": self.deprecation_note,
+            "confidence": self.confidence,
+            "source_url": self.source_url,
+            "version_locked": self.version_locked,
+            "checksum": self.checksum,
+            "created_at": self.created_at.isoformat(),
+            "updated_at": self.updated_at.isoformat(),
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "IntentEngram":
+        node = cls(
+            intent_id=UUID(data["intent_id"]) if data.get("intent_id") else uuid4(),
+            concept_label=data.get("concept_label", ""),
+            core_meaning=data.get("core_meaning", ""),
+            domains=[IntentDomain(d) for d in data.get("domains", [])
+                     if d in IntentDomain._value2member_map_],
+            known_implementations=[UUID(u) for u in data.get("known_implementations", [])],
+            common_partners=[UUID(u) for u in data.get("common_partners", [])],
+            alternatives=[UUID(u) for u in data.get("alternatives", [])],
+            common_scenarios=data.get("common_scenarios", []),
+            security_posture=data.get("security_posture", ""),
+            performance_notes=data.get("performance_notes", ""),
+            deprecation_note=data.get("deprecation_note", ""),
+            confidence=data.get("confidence", 1.0),
+            source_url=data.get("source_url", ""),
+            version_locked=data.get("version_locked", ""),
+        )
+        if ts := data.get("created_at"):
+            node.created_at = datetime.fromisoformat(ts)
+        if ts := data.get("updated_at"):
+            node.updated_at = datetime.fromisoformat(ts)
+        return node
